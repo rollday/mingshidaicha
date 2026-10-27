@@ -2,6 +2,7 @@ import { isIP } from 'node:net';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import { AppError } from './errors.ts';
+import type {OfficialDocument} from './official-info.ts';
 
 export interface SearchMcpSettings {
   url?: string;
@@ -32,6 +33,7 @@ export interface LenderSearchResult {
   license_determination: 'not_performed';
   categories: LenderSearchCategory[];
   limitations: string[];
+  official_documents?:Record<string,OfficialDocument>;
 }
 
 export interface SearchToolInput {
@@ -70,7 +72,7 @@ const CATEGORY_QUERIES: Array<{
 ];
 
 const LIMITATIONS = [
-  '检索来自公开搜索索引，来源内容未经核验；结果不构成事实认定或法律结论。',
+  '搜索摘要来自公开索引；点击读取的官方正文单独标注来源和时间，仍需核对主体及适用范围。',
   '未执行许可状态判断；没有检索结果不代表未获许可，索引可能不完整或过期。',
   '部分来源可能需要在浏览器中人工打开并核对。',
 ];

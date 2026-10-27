@@ -217,6 +217,7 @@ export class CaseClient {
   }
   retryReport() { if (this.state.current && !this.state.busy) this.task({ type: 'case.report', request_id: crypto.randomUUID(), case_id: this.state.current.case_id, expected_revision: this.state.current.revision }); }
   searchLender(name:string) { if (this.state.current && !this.state.busy) { this.update({stage:'search_sources'});this.task({type:'lender.search',request_id:crypto.randomUUID(),case_id:this.state.current.case_id,expected_revision:this.state.current.revision,name}); } }
+  readOfficial(url:string) { if(this.state.current && !this.state.busy){this.update({stage:'read_official_source'});this.task({type:'lender.detail',request_id:crypto.randomUUID(),case_id:this.state.current.case_id,expected_revision:this.state.current.revision,url});} }
   previewDocument = async (documentId:string,page:number,signal:AbortSignal):Promise<Blob> => {
     const response = await fetch(`/api/documents/${encodeURIComponent(documentId)}/pages/${page}.png`,{headers:{'X-Session-Token':this.session?.session_token ?? ''},signal});
     if (!response.ok) {

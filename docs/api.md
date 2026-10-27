@@ -70,9 +70,19 @@ task.started → case.confirmed → case.checked
 
 `lender.search {request_id,case_id,expected_revision,name?}` 在用户点击后检索机构名称；省略 `name` 时使用确认的放贷方名称。通过 `task.progress` 的 `search_license / search_registry / search_penalty` 阶段展示真实进度，最终返回 `lender.result {case_id,revision,result}`。
 
-`result` 包含 `name`、`queried_at`、三类 `categories`、来源链接及摘要、名称是否出现在摘要中，以及限制说明。状态区分 `sources_found / no_indexed_results / unavailable`。搜索只保留政府域名来源，不抓取结果链接、不绕过官方查询站点，也不将摘要当作许可状态或处罚事实。没有结果不能解释为没有牌照。
+`result` 包含 `name`、`queried_at`、三类 `categories`、来源链接及摘要、名称是否出现在摘要中，以及限制说明。状态区分 `sources_found / no_indexed_results / unavailable`。搜索只保留政府域名来源，不将摘要当作许可状态或处罚事实。没有结果不能解释为没有牌照。
 
 结果在案件快照的 `lender_search` 和报告数据的 `public_source_search` 中保留；不修改确认事实、规则状态或财务计算。重新确认事实后清除原检索记录。服务端从 `SEARCH_MCP_URL`、`SEARCH_MCP_AUTHORIZATION`、`SEARCH_TIMEOUT_MS` 读取 MCP 配置，凭据不发给前端或 Python。
+
+### 直接读取官方详情
+
+`lender.detail {request_id,case_id,expected_revision,url}` 读取本次搜索结果内、已接通的金融监管总局 `ItemDetail.html?docId=...` 公告。只接受当前案件结果中已有的 URL，服务端将文档编号映射到固定官方 JSON 接口，不执行任意网址抓取。进度为 `read_official_source`，完成仍发 `lender.result`。
+
+`result.official_documents[url]` 保存 `status`（`retrieved / unavailable / unsupported_source`）、原文/API 地址、读取时间、标题、发布日期、发布机构、纯文本全文、表格和官方附件链接。Python 清理 HTML，不执行脚本。`matched_rows` 只选择当事人名称栏与完整机构名匹配的行（允许“及相关责任人”后缀）；`name_match` 区分 `subject_row / text_only / not_found`。正文提及机构不等于认定该机构受罚，处罚记录也不等于当前持牌状态。
+
+每次检索最多保留八份详情。官方响应上限 2MiB，单份保存结果上限 512KiB；请求超时或格式不支持返回 `unavailable`，不表示没有记录。公开文档缓存十分钟，缓存命中保留原读取时间。模型及搜索凭据不会转发给官方接口；详情不传入报告模型、不修改确认事实或规则。
+
+2026-10-27 实测总局 `cbircweb/DocInfo/SelectByDocId` 和对应静态 JSON 可读。金融许可证入口要求验证码，当前保留人工查询；国家企业信用信息公示系统本次访问返回 521，尚未接通登记详情。上述观察不保证所有页面长期可用。
 
 ## 显示规则
 

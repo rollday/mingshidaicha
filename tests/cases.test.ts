@@ -7,6 +7,7 @@ import { CaseWorkflow } from '../src/cases.ts';
 import { displayDecimal, generateReport, type ReportInput } from '../src/report.ts';
 import { CaseModel, locateQuote } from '../src/case-model.ts';
 import {LenderSearchService} from '../src/lender-search.ts';
+import {OfficialInfoService} from '../src/official-info.ts';
 
 function facts() {
   return caseFactsSchema.parse({ borrower: { is_student: false, purpose: '普通消费' }, lender: { type: 'bank', internet_assisted: false },
@@ -57,17 +58,26 @@ test('report requires confirmation and cases are scoped to their session workflo
 
 test('public source search stays versioned and never mutates licensing facts or risk rules',async()=>{
   const workflow=new CaseWorkflow({...config,apiKey:undefined});
-  workflow.search=new LenderSearchService({url:'https://search.example/mcp',timeout:1000},async()=>({content:[{type:'text',text:'[1] Title: 示例银行公告\nURL: https://www.nfra.gov.cn/example\n[Text]: 示例银行相关公开信息'}]}));
+  const url='https://www.nfra.gov.cn/cn/view/pages/ItemDetail.html?docId=900000011';
+  workflow.search=new LenderSearchService({url:'https://search.example/mcp',timeout:1000},async()=>({content:[{type:'text',text:`[1] Title: 示例银行公告\nURL: ${url}\n[Text]: 示例银行相关公开信息`}]}));
+  workflow.official=new OfficialInfoService(config,async()=>Response.json({rptCode:200,data:{docId:900000011,docClob:'<table><tr><th>当事人名称</th><th>行政处罚内容</th></tr><tr><td>示例银行</td><td>罚款50万元</td></tr></table>'}}));
   let id='';const emit=(type:string,data:any)=>{if(type==='case.review')id=data.case_id;};
   const original=facts();original.lender.name='示例银行';
   const signal=new AbortController().signal;
   await workflow.execute({type:'case.start',request_id:'a',documents:[],manual_facts:original},signal,emit,()=>undefined);
   await workflow.execute({type:'case.confirm',request_id:'b',case_id:id,expected_revision:0,facts:original},signal,emit,()=>undefined);
   const record=workflow.get(id),before=structuredClone(record.report!.rules);
+  await assert.rejects(workflow.execute({type:'lender.detail',request_id:'no-search',case_id:id,expected_revision:1,url},signal,emit,()=>undefined),{code:'SEARCH_REQUIRED'});
   await workflow.execute({type:'lender.search',request_id:'c',case_id:id,expected_revision:1},signal,emit,()=>undefined);
   assert.equal(record.facts.lender.licensed,null);assert.deepEqual(record.report!.rules,before);assert.equal(record.revision,1);
   assert.equal(record.report!.public_source_search?.name,'示例银行');
   assert.equal(record.lender_search?.license_determination,'not_performed');
+  await assert.rejects(workflow.execute({type:'lender.detail',request_id:'foreign-source',case_id:id,expected_revision:1,url:url+'2'},signal,emit,()=>undefined),{code:'SOURCE_NOT_FOUND'});
+  await assert.rejects(workflow.execute({type:'lender.detail',request_id:'stale-detail',case_id:id,expected_revision:0,url},signal,emit,()=>undefined),{code:'REVISION_CONFLICT'});
+  await workflow.execute(commandSchema.parse({type:'lender.detail',request_id:'detail',case_id:id,expected_revision:1,url}) as any,signal,emit,()=>undefined);
+  assert.equal(record.report!.public_source_search?.official_documents?.[url]?.name_match,'subject_row');
+  assert.equal(workflow.view(record).lender_search?.official_documents?.[url]?.matched_rows[0]?.cells[1],'罚款50万元');
+  assert.equal(record.facts.lender.licensed,null);assert.deepEqual(record.report!.rules,before);assert.equal(record.revision,1);
   await assert.rejects(workflow.execute({type:'lender.search',request_id:'d',case_id:id,expected_revision:0},signal,emit,()=>undefined),{code:'REVISION_CONFLICT'});
   await workflow.execute({type:'case.confirm',request_id:'e',case_id:id,expected_revision:1,facts:original},signal,emit,()=>undefined);
   assert.equal(record.lender_search,null);assert.equal(record.report!.public_source_search,null);

@@ -6,6 +6,7 @@ import type { samples } from '../src/samples.ts';
 export type { CaseFacts, Evidence, LoanResult, RuleResult, SourceMaterial } from '../src/domain.ts';
 export type { AuditReport, Correction } from '../src/report.ts';
 export type { LenderSearchResult, LenderSearchCategory, LenderSearchSource } from '../src/lender-search.ts';
+export type {OfficialDocument} from '../src/official-info.ts';
 export type ClientCommand = input<typeof commandSchema>;
 export type CaseSnapshot = ReturnType<CaseWorkflow['view']>;
 export type CaseReview = CaseSnapshot & { requires_confirmation: true };

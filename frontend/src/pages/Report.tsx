@@ -18,6 +18,7 @@ export default function Report({
   stage,
   onSearch,
   onCancel,
+  onReadOfficial,
 }: {
   report: AuditReport;
   onBack: () => void;
@@ -27,6 +28,7 @@ export default function Report({
   stage:string;
   onSearch:(name:string)=>void;
   onCancel:()=>void;
+  onReadOfficial:(url:string)=>void;
 }) {
   return (
     <section className="flex flex-col gap-8 animate-rise">
@@ -46,7 +48,7 @@ export default function Report({
           </p>
         </div>
         <div className="flex flex-col gap-3 sm:flex-row">
-          <Button variant="secondary" onClick={onRetry} disabled={busy}>{busy ? (stage.startsWith('search_') ? '正在检索公开来源…' : '正在生成报告…') : '重新生成报告'}</Button>
+          <Button variant="secondary" onClick={onRetry} disabled={busy}>{busy ? (stage==='read_official_source'?'正在读取官方详情…':stage.startsWith('search_') ? '正在检索公开来源…' : '正在生成报告…') : '重新生成报告'}</Button>
           {busy && <Button onClick={onCancel}>取消任务</Button>}
           <Button variant="secondary" disabled={busy} onClick={() => {
             const url = URL.createObjectURL(new Blob([JSON.stringify(report, null, 2)], { type: 'application/json' }));
@@ -60,7 +62,7 @@ export default function Report({
         <VerdictCard report={report} />
         <FeeTable report={report} />
         <RuleList report={report} />
-        <LenderCheck report={report} busy={busy} onSearch={onSearch} />
+        <LenderCheck report={report} busy={busy} onSearch={onSearch} onReadOfficial={onReadOfficial} />
         <MonthlyCard report={report} />
         <Glossary />
         <ActionList report={report} />

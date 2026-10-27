@@ -9,8 +9,9 @@ import { runPython } from './python.ts';
 import { evaluateRules } from './rules.ts';
 import { generateReport, type AuditReport, type Correction } from './report.ts';
 import { LenderSearchService, type LenderSearchResult } from './lender-search.ts';
+import {OfficialInfoService} from './official-info.ts';
 
-type Command = Extract<z.infer<typeof commandSchema>, { type: 'case.start' | 'case.confirm' | 'case.get' | 'case.report' | 'lender.search' }>;
+type Command = Extract<z.infer<typeof commandSchema>, { type: 'case.start' | 'case.confirm' | 'case.get' | 'case.report' | 'lender.search' | 'lender.detail' }>;
 type Emit = (type: string, data: unknown) => void;
 type Document = { path: string; mime: string };
 type CaseRecord = {
@@ -34,8 +35,9 @@ export class CaseWorkflow {
   settings: Config;
   model: CaseModel;
   search: LenderSearchService;
+  official: OfficialInfoService;
   records = new Map<string, CaseRecord>();
-  constructor(settings: Config) { this.settings = settings; this.model = new CaseModel(settings); this.search = new LenderSearchService({url:settings.searchMcpURL,authorization:settings.searchAuthorization,timeout:settings.searchTimeout}); }
+  constructor(settings: Config) { this.settings = settings; this.model = new CaseModel(settings); this.search = new LenderSearchService({url:settings.searchMcpURL,authorization:settings.searchAuthorization,timeout:settings.searchTimeout}); this.official=new OfficialInfoService(settings); }
 
   get(id: string) {
     const record = this.records.get(id);
@@ -100,6 +102,18 @@ export class CaseWorkflow {
     }
     const record = this.get(command.case_id);
     if (record.revision !== command.expected_revision) throw new AppError('REVISION_CONFLICT', '案件已更新，请先读取最新版本。', 409);
+    if(command.type==='lender.detail'){
+      const lookup=record.lender_search;
+      if(!lookup)throw new AppError('SEARCH_REQUIRED','请先检索机构的公开来源。',409);
+      if(!lookup.categories.some(category=>category.sources.some(source=>source.url===command.url)))throw new AppError('SOURCE_NOT_FOUND','该链接不属于本次检索结果。',404);
+      if(!lookup.official_documents?.[command.url] && Object.keys(lookup.official_documents??{}).length>=8)throw new AppError('DETAIL_LIMIT','每次检索最多保留八份官方详情。',429);
+      emit('task.progress',{stage:'read_official_source'});
+      const detail=await this.official.read(command.url,lookup.name,signal);
+      checkpoint();
+      lookup.official_documents={...lookup.official_documents,[command.url]:detail};
+      if(record.report)record.report.public_source_search=lookup;
+      emit('lender.result',{case_id:record.id,revision:record.revision,result:lookup});return;
+    }
     if (command.type === 'lender.search') {
       const result = await this.search.search(command.name ?? record.facts.lender.name ?? '',signal,category => emit('task.progress',{stage:'search_'+category}));
       checkpoint(); record.lender_search = result;

@@ -31,6 +31,9 @@ def _dispatch(request: Any) -> dict[str, Any]:
     if operation == 'prepare_visual':
         from visual import prepare_visual
         return prepare_visual(payload)
+    if operation == 'parse_official_html':
+        from official_html import parse_official_html
+        return parse_official_html(payload)
     raise CalculationError("UNKNOWN_OPERATION", "operation must be 'calculate', 'calculate_loan', or 'parse_pdf'")
 
 

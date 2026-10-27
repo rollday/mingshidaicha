@@ -215,7 +215,7 @@ export async function createBackend(settings: Config = config) {
         broadcast(activeSession, 'task.started', id, { operation: command.type });
         void (async () => {
           try {
-            if (command.type === 'case.start' || command.type === 'case.confirm' || command.type === 'case.report' || command.type === 'lender.search') {
+            if (command.type === 'case.start' || command.type === 'case.confirm' || command.type === 'case.report' || command.type === 'lender.search' || command.type === 'lender.detail') {
               await activeSession.workflow.execute(command, abort.signal, (type, data) => broadcast(activeSession, type, requestId, data), documentId => activeSession.documents.get(documentId));
             } else if (command.type === 'audit.calculate') {
               broadcast(activeSession, 'task.progress', requestId, { stage: 'calculate' });

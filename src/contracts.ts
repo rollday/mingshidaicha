@@ -50,4 +50,5 @@ export const commandSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('case.get'), request_id: requestId, case_id: z.string().uuid() }).strict(),
   z.object({ type: z.literal('case.report'), request_id: requestId, case_id: z.string().uuid(), expected_revision: z.number().int().nonnegative() }).strict(),
   z.object({ type: z.literal('lender.search'), request_id: requestId, case_id: z.string().uuid(), expected_revision: z.number().int().nonnegative(), name: z.string().min(2).max(100).optional() }).strict(),
+  z.object({ type: z.literal('lender.detail'), request_id: requestId, case_id: z.string().uuid(), expected_revision: z.number().int().nonnegative(), url:z.url().max(2048) }).strict(),
 ]);

@@ -20,7 +20,7 @@ function Workflow() {
     {state.warning && <Card inset tone="amber" className="mb-5" role="status"><p className="text-sm">{state.warning}</p></Card>}
     {state.screen === 'upload' && <Upload state={state} mode={mode} onStart={(files,text,purpose) => void client.start(files,text,student,purpose)} onManual={() => client.manual(student)} onDemo={fee => client.demo(fee,student)} onCancel={() => client.cancel()} />}
     {state.screen === 'confirm' && state.current && <Confirm key={state.current.case_id + ':' + state.current.revision} current={state.current} parsed={state.parsed} busy={state.busy} stage={state.stage} onConfirm={facts => client.confirm(facts)} onReset={() => void client.reset()} onCancel={() => client.cancel()} loadPage={client.previewDocument} />}
-    {state.screen === 'report' && state.current?.report && <Report report={state.current.report} busy={state.busy} stage={state.stage} onBack={() => client.update({ screen: 'confirm', error: null })} onReset={() => void client.reset()} onRetry={() => client.retryReport()} onSearch={name=>client.searchLender(name)} onCancel={()=>client.cancel()} />}
+    {state.screen === 'report' && state.current?.report && <Report report={state.current.report} busy={state.busy} stage={state.stage} onBack={() => client.update({ screen: 'confirm', error: null })} onReset={() => void client.reset()} onRetry={() => client.retryReport()} onSearch={name=>client.searchLender(name)} onCancel={()=>client.cancel()} onReadOfficial={url=>client.readOfficial(url)} />}
     <footer className="mt-10 border-t border-line pt-5 text-xs text-mute">明示贷查 · 材料核对工具<span className="mx-2">/</span>基于现有材料与用户确认事实生成结果。</footer>
   </main></>;
 }

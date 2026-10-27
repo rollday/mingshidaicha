@@ -10,6 +10,8 @@ Node.js 24 + TypeScript + OpenAI 官方 SDK + pnpm + WebSocket。Python 负责�
 
 文本 PDF 支持原始页面预览与原文匹配高亮，扫描件显示原图和转录摘录。报告页支持可选的 MCP 公开来源检索：配置 `SEARCH_MCP_URL` 和完整的 `SEARCH_MCP_AUTHORIZATION` 请求头值后，用户可以按机构名称查找许可、登记和处罚页面；结果只作为可复核线索，不自动认定资质或修改规则结论。
 
+搜索结果中的金融监管总局公告可直接读取官方 JSON，展示标题、发布日期、全文与表格，按当事人名称匹配机构记录。官方详情与搜索摘要分别标注，不交给模型改写或自动改变资质。金融许可证查询有验证码，目前人工核对；企业登记详情尚未接通。协议及具体限制见 [docs/api.md](docs/api.md)。
+
 ```bash
 pnpm install --frozen-lockfile
 uv venv .venv
