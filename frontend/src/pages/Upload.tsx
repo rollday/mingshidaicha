@@ -6,7 +6,7 @@ import type { Mode, Sample } from '../types/audit.ts';
 type SelectedFile = { file: File; role: 'disclosure' | 'contract' | 'schedule' | 'other' };
 const stageNames: Record<string, string> = { upload: '上传材料', parse_pdf: '读取 PDF 文本', read_images: '识别图片内容', extract_case: '抽取并对齐事实', prepare_review: '准备核对信息', calculate: '生成现金流并核算', check_rules: '对照检查项', write_report: '撰写报告' };
 export function LoadingSteps({ stage, onCancel }: { stage: string; onCancel: () => void }) {
-  return <div role="status" aria-live="polite" className="flex flex-col gap-5 py-6"><p className="text-lg font-medium">{stageNames[stage] ?? '正在处理材料'}…</p><div className="h-2 overflow-hidden rounded-sm bg-line"><div className="h-full w-3/5 animate-skeleton rounded-sm bg-blue" /></div><p className="text-sm text-mute">读取材料 → 抽取事实 → 等你核对。文件较长或是照片时会更久。</p><Button onClick={onCancel} className="self-start">取消本次任务</Button></div>;
+  return <div role="status" aria-live="polite" className="flex flex-col gap-5 py-6"><p className="text-lg font-medium">{stageNames[stage] ?? '正在处理材料'}…</p><p className="text-sm text-mute">处理记录与已完成的结果会持续显示在上方。</p><Button onClick={onCancel} className="self-start">取消本次任务</Button></div>;
 }
 export function UploadDropzone({ onFiles, disabled }: { onFiles: (files: File[]) => void; disabled: boolean }) {
   const input = useRef<HTMLInputElement>(null);

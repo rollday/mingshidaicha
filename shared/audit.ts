@@ -3,6 +3,8 @@ import type { input } from 'zod';
 import type { commandSchema } from '../src/contracts.ts';
 import type { CaseWorkflow } from '../src/cases.ts';
 import type { samples } from '../src/samples.ts';
+import type {Activity,ReportDraft} from './progress.ts';
+export type {Activity,ReportDraft,DraftSection} from './progress.ts';
 export type { CaseFacts, Evidence, LoanResult, RuleResult, SourceMaterial } from '../src/domain.ts';
 export type { AuditReport, Correction } from '../src/report.ts';
 export type { LenderSearchResult, LenderSearchCategory, LenderSearchSource } from '../src/lender-search.ts';
@@ -25,6 +27,9 @@ export type ServerEvent =
   | Envelope<'task.started', { operation: string }>
   | Envelope<'task.progress', { stage: string; document_id?: string }>
   | Envelope<'model.progress', { received_bytes: number; stage?: string }>
+  | Envelope<'task.activity',Activity>
+  | Envelope<'report.draft',ReportDraft>
+  | Envelope<'lender.category',{category:import('../src/lender-search.ts').LenderSearchCategory}>
   | Envelope<'document.parsed', DocumentParsed>
   | Envelope<'case.review', CaseReview>
   | Envelope<'case.snapshot', CaseSnapshot>

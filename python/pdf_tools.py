@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import os
-from typing import Any
+from typing import Any, Callable
 
 
 class PdfError(Exception):
@@ -14,7 +14,10 @@ class PdfError(Exception):
         self.details = details
 
 
-def parse_pdf(payload: Any) -> dict[str, Any]:
+def parse_pdf(
+    payload: Any,
+    progress: Callable[[dict[str, Any]], None] | None = None,
+) -> dict[str, Any]:
     if not isinstance(payload, dict):
         raise PdfError("INVALID_INPUT", "payload must be an object")
     path = payload.get("path")
@@ -57,6 +60,8 @@ def parse_pdf(payload: Any) -> dict[str, Any]:
                      for word in page.get_text("words", sort=True)]
             pages.append({"page": page_index + 1, "width": float(rect.width), "height": float(rect.height),
                           "rotation": page.rotation, "text": page.get_text("text"), "blocks": blocks, "words": words})
+            if progress is not None:
+                progress({"stage": "parse_pdf", "page": page_index + 1, "total_pages": page_count})
         return {"page_count": page_count, "pages": pages,
                 "needs_vision": any(not p["text"].strip() for p in pages)}
     finally:

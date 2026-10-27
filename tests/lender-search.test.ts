@@ -108,3 +108,15 @@ test('missing provider configuration throws SEARCH_NOT_CONFIGURED', async () => 
   await assert.rejects(service.search(name, new AbortController().signal), (error: unknown) =>
     error instanceof AppError && error.code === 'SEARCH_NOT_CONFIGURED' && error.status === 503);
 });
+
+test('completed categories stream before slower parallel searches finish',async()=>{
+  const gate=Promise.withResolvers<void>(),first=Promise.withResolvers<void>();
+  const streamed:string[]=[];let complete=false;
+  const service=new LenderSearchService(settings,async input=>{
+    if(!input.query.includes('金融许可证'))await gate.promise;
+    return formattedResponse();
+  });
+  const pending=service.search(name,new AbortController().signal,undefined,category=>{streamed.push(category.kind);first.resolve();}).then(result=>{complete=true;return result;});
+  await first.promise;assert.equal(complete,false);assert.deepEqual(streamed,['license']);
+  gate.resolve();assert.equal((await pending).categories.length,3);assert.equal(streamed.length,3);
+});

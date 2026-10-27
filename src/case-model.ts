@@ -24,7 +24,7 @@ export class CaseModel {
     this.settings = settings;
     if (settings.apiKey) this.client = new OpenAI({ apiKey: settings.apiKey, baseURL: settings.baseURL, timeout: settings.modelTimeout, maxRetries: 0 });
   }
-  async json(system: string, content: string | ChatCompletionContentPart[], signal: AbortSignal, progress: (bytes: number) => void): Promise<unknown> {
+  async json(system: string, content: string | ChatCompletionContentPart[], signal: AbortSignal, progress: (bytes: number) => void, onDelta?: (delta:string)=>void): Promise<unknown> {
     if (!this.client) throw new AppError('MODEL_NOT_CONFIGURED', '尚未配置模型服务。', 503);
     let text = '', finish: string | null = null;
     try {
@@ -36,12 +36,14 @@ export class CaseModel {
       if (this.settings.model.startsWith('deepseek')) request.thinking = { type: this.settings.reasoningEffort === 'none' ? 'disabled' : 'enabled' };
       const stream = await this.client.chat.completions.create(request, { signal });
       for await (const chunk of stream) {
+        if(signal.aborted)throw new AppError('TASK_CANCELLED','任务已取消。',499);
         if (chunk.choices[0]?.finish_reason) finish = chunk.choices[0].finish_reason;
         const delta = chunk.choices[0]?.delta.content;
         if (delta) {
           text += delta;
           if (text.length > 1000000) { stream.controller.abort(); throw new AppError('MODEL_OUTPUT_TOO_LARGE', '模型输出过大。', 502); }
           progress(Buffer.byteLength(text));
+            onDelta?.(delta);
         }
       }
       if (finish !== 'stop') throw new AppError('MODEL_INCOMPLETE', '模型输出未完成，请重试。', 502, { finish_reason: finish, received_characters: text.length });

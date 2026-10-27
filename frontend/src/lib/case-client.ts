@@ -1,27 +1,39 @@
-import type { ApiError, CaseFacts, CaseSnapshot, ClientCommand, DocumentParsed, Sample, ServerEvent, Session } from '../types/audit.ts';
+import type { Activity,ReportDraft,LenderSearchCategory,ApiError, CaseFacts, CaseSnapshot, ClientCommand, DocumentParsed, Sample, ServerEvent, Session } from '../types/audit.ts';
 
 export type CaseState = {
   connection: 'connecting' | 'ready' | 'offline'; busy: boolean;
   screen: 'upload' | 'confirm' | 'report'; stage: string;
   current: CaseSnapshot | null; parsed: Record<string, DocumentParsed>;
   error: ApiError | null; warning: string | null; samples: Sample[];
+  activities:Activity[];checked:CaseSnapshot['checked'];draft:ReportDraft|null;liveCategories:LenderSearchCategory[];
+  startedAt:string|null;finishedAt:string|null;lastModelAt:string|null;
 };
-export const initialState = (): CaseState => ({ connection: 'connecting', busy: false, screen: 'upload', stage: '', current: null, parsed: {}, error: null, warning: null, samples: [] });
+export const initialState = (): CaseState => ({ connection: 'connecting', busy: false, screen: 'upload', stage: '', current: null, parsed: {}, error: null, warning: null, samples: [],activities:[],checked:null,draft:null,liveCategories:[],startedAt:null,finishedAt:null,lastModelAt:null });
+const mergeActivities=(before:Activity[],after:Activity[])=>[...new Map([...before,...after].map(entry=>[entry.id,entry])).values()].slice(-180);
+const stoppedDraft=(draft:ReportDraft|null):ReportDraft|null=>draft?{...draft,status:'discarded',sections:[]}:null;
 
 /** Pure event adapter: request scoping is enforced by the client before reducing. */
 export function applyEvent(state: CaseState, event: ServerEvent): CaseState {
+  const at=event.timestamp||new Date().toISOString();
+  const terminal=(message:string,status:Activity['status'])=>mergeActivities(state.activities,[{id:`local:${event.request_id}:${event.type}`,timestamp:at,revision:state.current?.revision??null,stage:state.stage,kind:'process',status,message}]);
   switch (event.type) {
+    case 'task.started':return {...state,busy:true,startedAt:at,finishedAt:null,lastModelAt:null,draft:null,liveCategories:[]};
+    case 'task.activity':return {...state,activities:mergeActivities(state.activities,[event.data])};
+    case 'model.progress':return {...state,lastModelAt:at};
+    case 'report.draft':return state.draft && event.data.attempt<state.draft.attempt?state:{...state,draft:event.data};
+    case 'lender.category':return {...state,liveCategories:[...state.liveCategories.filter(category=>category.kind!==event.data.category.kind),event.data.category]};
     case 'document.parsed': return { ...state, parsed: { ...state.parsed, [event.data.document_id]: event.data } };
     case 'task.progress': return { ...state, stage: event.data.stage };
-    case 'case.review': return { ...state, current: event.data, screen: 'confirm' };
-    case 'case.snapshot': return { ...state, current: event.data, screen: event.data.report ? 'report' : 'confirm' };
-    case 'case.confirmed': return { ...state, current: state.current ? { ...state.current, revision: event.data.revision, corrections: event.data.corrections, report: null } : null };
+    case 'case.review': return { ...state, current: event.data, screen: 'confirm',checked:event.data.checked??null,activities:mergeActivities(state.activities,event.data.activities??[]) };
+    case 'case.snapshot': return { ...state, current: event.data, screen: event.data.report ? 'report' : 'confirm',checked:event.data.checked??null,draft:null,activities:mergeActivities(state.activities,event.data.activities??[]) };
+    case 'case.confirmed': return { ...state,checked:null,draft:null,current: state.current ? { ...state.current, revision: event.data.revision, corrections: event.data.corrections, report: null,checked:null } : null };
+    case 'case.checked':return state.current?.case_id===event.data.case_id && state.current.revision===event.data.revision?{...state,checked:event.data,current:{...state.current,checked:event.data}}:state;
     case 'case.calculation_unavailable': return { ...state, warning: '材料不足或存在冲突，本次报告将注明无法核算。' };
     case 'report.warning': return { ...state, warning: event.data.message };
-    case 'report.result': return { ...state, screen: 'report', current: state.current ? { ...state.current, revision: event.data.revision, status: 'completed', report: event.data.report } : null };
+    case 'report.result': return { ...state, screen: 'report',draft:null,current: state.current ? { ...state.current, revision: event.data.revision, status: 'completed', report: event.data.report } : null };
     case 'lender.result': return { ...state, current: state.current ? { ...state.current, lender_search:event.data.result, report:state.current.report ? {...state.current.report,public_source_search:event.data.result} : null } : null };
-    case 'task.completed': return { ...state, busy: false, stage: '' };
-    case 'task.error': case 'request.error': return { ...state, busy: false, stage: '', error: event.data };
+    case 'task.completed': return { ...state, busy: false, stage: '',finishedAt:at,lastModelAt:null,activities:terminal('本次处理完成','completed') };
+    case 'task.error': case 'request.error': return { ...state, busy: false, stage: '', error: event.data,finishedAt:at,lastModelAt:null,draft:stoppedDraft(state.draft),activities:terminal(event.data.message,'warning') };
     default: return state;
   }
 }
@@ -42,6 +54,7 @@ export class CaseClient {
   private uploaded = new Map<File, string>();
   private activeId: string | null = null;
   private snapshotId: string | null = null;
+  private canceledId:string|null=null;
 
   subscribe(listener: (state: CaseState) => void) { this.listeners.add(listener); listener(this.state); return () => { this.listeners.delete(listener); }; }
   update(patch: Partial<CaseState>) { this.state = { ...this.state, ...patch }; for (const listener of this.listeners) listener(this.state); }
@@ -58,16 +71,18 @@ export class CaseClient {
   private failure(error: unknown) {
     const value = error as Partial<ApiError>;
     const disconnected = !value.code || ['NETWORK_ERROR','OFFLINE','CONNECTION_TIMEOUT'].includes(value.code);
-    this.update({ ...(disconnected ? {connection:'offline' as const} : {}), busy: false, stage: '', error: { code: value.code ?? 'NETWORK_ERROR', message: value.message ?? '网络连接中断，请重试。' } });
+    this.update({ ...(disconnected ? {connection:'offline' as const} : {}), busy: false, stage: '',finishedAt:new Date().toISOString(),lastModelAt:null,draft:stoppedDraft(this.state.draft),error: { code: value.code ?? 'NETWORK_ERROR', message: value.message ?? '网络连接中断，请重试。' } });
   }
   async open() {
     const generation = ++this.generation;
+    const interrupted=this.state.busy;
+    if(interrupted)this.canceledId=this.activeId;
     this.cleanupConnection();
     const canceledUpload = this.uploadAbort !== null;
     this.uploadAbort?.abort(); this.uploadAbort = null;
     this.stopped = false;
     this.retries = 0;
-    this.update({ connection: 'connecting', error: null, ...(canceledUpload ? { busy: false, stage: '' } : {}) });
+    this.update({ connection: 'connecting', error: null, ...(canceledUpload||interrupted ? { busy: false, stage: '',draft:stoppedDraft(this.state.draft),finishedAt:new Date().toISOString(),lastModelAt:null } : {}) });
     try {
       const samples = await this.http<Sample[]>('/api/samples');
       if (!this.isCurrent(generation)) return;
@@ -138,18 +153,22 @@ export class CaseClient {
           return;
         }
         if (event.request_id !== this.activeId && event.request_id !== this.snapshotId) return;
+        if(event.request_id===this.canceledId && !['task.error','request.error','task.completed'].includes(event.type))return;
         this.reduce(event);
         if (event.type === 'request.error' && event.data.code === 'REVISION_CONFLICT' && this.state.current) {
           this.snapshotId = crypto.randomUUID(); this.send({ type: 'case.get', request_id: this.snapshotId, case_id: this.state.current.case_id });
         }
+        if(['task.completed','task.error','request.error'].includes(event.type) && event.request_id===this.activeId)this.activeId=null;
+        if(event.type==='case.snapshot' && event.request_id===this.snapshotId)this.snapshotId=null;
       };
       ws.onerror = () => { if (!ready) fail({ code: 'NETWORK_ERROR', message: '无法连接服务，请检查网络。' }); };
       ws.onclose = () => {
         clearTimeout(this.socketTimeout); this.socketTimeout = undefined;
         if (this.socket !== ws || !this.isCurrent(generation)) return;
         this.socket = null;
+        this.canceledId=this.activeId;
         const error = { code: 'NETWORK_ERROR', message: '连接中断，正在尝试恢复。' };
-        this.update({ connection: 'offline', busy: false, stage: '', ...(allowRetry ? { error } : {}), warning: this.state.busy ? '连接中断，当前任务可能已取消。恢复后可重新读取或生成报告。' : this.state.warning });
+        this.update({ connection: 'offline', busy: false, stage: '',draft:stoppedDraft(this.state.draft),finishedAt:new Date().toISOString(),lastModelAt:null,...(allowRetry ? { error } : {}), warning: this.state.busy ? '连接中断，当前任务可能已取消。草稿已撤回，已核算结果保留；恢复后可重新生成报告。' : this.state.warning });
         if (!ready) fail(error);
         if (allowRetry && this.retries < 3) {
           const delay = 1000 * 2 ** this.retries++;
@@ -172,9 +191,11 @@ export class CaseClient {
     if (this.socket?.readyState !== WebSocket.OPEN || this.state.connection !== 'ready') throw { code: 'OFFLINE', message: '连接尚未恢复，请稍后重试。' };
     this.socket.send(JSON.stringify(command));
   }
-  private task(command: ClientCommand) {
+  private task(command: ClientCommand,keepActivities=false) {
     this.activeId = command.request_id;
-    this.update({ busy: true, error: null, warning: null });
+    this.snapshotId=null;
+    this.canceledId=null;
+    this.update({ busy: true, error: null, warning: null,draft:null,liveCategories:[],startedAt:new Date().toISOString(),finishedAt:null,lastModelAt:null,...(command.type==='case.start'&&!keepActivities?{activities:[],checked:null,parsed:{}}:{}) });
     try { this.send(command); } catch (error) { this.failure(error); }
   }
   async start(files: FileInput[], text: string, isStudent: boolean | null, purpose: string) {
@@ -182,10 +203,12 @@ export class CaseClient {
     const generation = this.generation;
     this.uploadAbort = new AbortController();
     const abort = this.uploadAbort;
-    this.update({ busy: true, error: null, warning: null, stage: 'upload' });
+    this.update({ busy: true, error: null, warning: null, stage: 'upload',activities:[],checked:null,draft:null,liveCategories:[],startedAt:new Date().toISOString(),finishedAt:null,lastModelAt:null });
     try {
       const documents = [];
       for (const { file, role } of files) {
+        const uploadActivity=(status:Activity['status'],message:string)=>this.update({activities:mergeActivities(this.state.activities,[{id:crypto.randomUUID(),timestamp:new Date().toISOString(),revision:null,stage:'upload',kind:'process',status,message}])});
+        uploadActivity('started',`正在上传 ${file.name}（${documents.length+1}/${files.length}）`);
         let document_id = this.uploaded.get(file);
         if (!document_id) {
           const uploaded = await this.http<{ document_id: string }>('/api/documents', { method: 'POST', body: file, headers: { 'Content-Type': file.type || (file.name.toLowerCase().endsWith('.pdf') ? 'application/pdf' : 'application/octet-stream') }, signal: abort.signal });
@@ -193,9 +216,10 @@ export class CaseClient {
           document_id = uploaded.document_id; this.uploaded.set(file, document_id);
         }
         documents.push({ document_id, role });
+        uploadActivity('completed',`${file.name} 上传完成`);
       }
       if (!this.isCurrent(generation) || abort.signal.aborted) return;
-      this.task({ type: 'case.start', request_id: crypto.randomUUID(), documents, text: text.trim() || undefined, context: { is_student: isStudent, purpose: purpose || 'unknown' } });
+      this.task({ type: 'case.start', request_id: crypto.randomUUID(), documents, text: text.trim() || undefined, context: { is_student: isStudent, purpose: purpose || 'unknown' } },true);
     } catch (error) { if (!abort.signal.aborted) this.failure(error); }
     finally { if (this.uploadAbort === abort) this.uploadAbort = null; }
   }
@@ -212,7 +236,7 @@ export class CaseClient {
   }
   confirm(facts: CaseFacts) {
     if (!this.state.current || this.state.busy) return;
-    this.update({ current: { ...this.state.current, facts: structuredClone(facts), report: null } });
+    this.update({ checked:null,draft:null,current: { ...this.state.current, facts: structuredClone(facts), report: null,checked:null } });
     this.task({ type: 'case.confirm', request_id: crypto.randomUUID(), case_id: this.state.current.case_id, expected_revision: this.state.current.revision, facts });
   }
   retryReport() { if (this.state.current && !this.state.busy) this.task({ type: 'case.report', request_id: crypto.randomUUID(), case_id: this.state.current.case_id, expected_revision: this.state.current.revision }); }
@@ -227,7 +251,9 @@ export class CaseClient {
     return response.blob();
   };
   cancel() {
-    if (this.uploadAbort) { this.uploadAbort.abort(); this.uploadAbort = null; this.update({ busy: false, stage: '' }); }
+    this.canceledId=this.activeId;
+    this.update({draft:stoppedDraft(this.state.draft),lastModelAt:null});
+    if (this.uploadAbort) { this.uploadAbort.abort(); this.uploadAbort = null; const at=new Date().toISOString();this.update({ busy: false, stage: '',finishedAt:at,activities:mergeActivities(this.state.activities,[{id:crypto.randomUUID(),timestamp:at,revision:null,stage:'upload',kind:'process',status:'warning',message:'已取消上传'}]) }); }
     else try { this.send({ type: 'task.cancel', request_id: crypto.randomUUID() }); } catch (error) { this.failure(error); }
   }
   async reset() {
@@ -236,7 +262,7 @@ export class CaseClient {
     this.stopped = true;
     this.cleanupConnection();
     this.uploadAbort?.abort(); this.uploadAbort = null;
-    this.session = null; this.activeId = null; this.snapshotId = null; this.uploaded.clear(); this.retries = 0;
+    this.session = null; this.activeId = null; this.snapshotId = null;this.canceledId=null;this.uploaded.clear(); this.retries = 0;
     this.state = initialState(); for (const listener of this.listeners) listener(this.state);
     if (oldSession) {
       try { await this.http('/api/sessions/current', { method: 'DELETE' }, oldSession); } catch { /* An expired session is already gone; reset still opens a fresh one. */ }

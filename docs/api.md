@@ -84,6 +84,18 @@ task.started → case.confirmed → case.checked
 
 2026-10-27 实测总局 `cbircweb/DocInfo/SelectByDocId` 和对应静态 JSON 可读。金融许可证入口要求验证码，当前保留人工查询；国家企业信用信息公示系统本次访问返回 521，尚未接通登记详情。上述观察不保证所有页面长期可用。
 
+## 实时处理记录与报告草稿
+
+`task.activity` 是公开处理记录：`id/timestamp/revision/stage/kind/status/message`，可附材料页号、`evidence_ids/rule_ids` 或官方原文链接。`kind=analysis` 是由实际材料、计算、规则或官方返回生成的分析摘要，不是模型内部推理。每个案件最多保留最近 180 条；快照 `activities` 和报告 `processing_activity` 可回读、随报告数据导出。旧版本摘要保留版本标记，不与当前规则结果混用。
+
+PDF worker 可选 `stream_progress:true` 时按 NDJSON 发送 `{progress:{stage:"parse_pdf",page,total_pages}}`，最后仍发送唯一 `{ok,result/error}`；未启用时保持单份 JSON。Node 将真实页进度转成 WS 活动记录，不按时间伪造百分比。`document.parsed` 仍在整份 PDF 解析完成后发出，前端可以立即展开已读取原文。
+
+`case.checked` 在报告撰写之前发送，并保存在案件快照 `checked` 中。前端立即展示这份确定性计算与四态规则结果，无须等 `report.result`；再次确认事实时立即清除旧结果。`lender.category {category}` 则在每个并行检索分类完成后发送，随后 `lender.result` 给出最终完整结果。
+
+`report.draft {attempt,status,sections}` 持续替换当前草稿，章节类型为 `summary/finding/action/limitation`。状态为 `streaming/validating/retrying/discarded/accepted`，每次生成最多两次尝试。后端只提取白名单叙述字段；完整金额占位符从可信计算渲染，不转发原始 JSON、系统提示或推理字段。前缀检查会隐藏未知占位符、未经允许的数字和规则引用；草稿仍须明确标记“未校验”，只有完整结构及引用校验通过后才由 `report.result` 替代。
+
+重试先撤回上一份草稿；取消、失败或断线清空草稿内容，已完成核算可以保留。草稿不写入案件快照，不在断线后恢复。事件只作用于当前 `request_id`，取消或结束后的迟到分片不得重新显示；重连通过 `case.get` 恢复处理记录和已核算结果。处理记录与材料同样只在会话内存存活，服务重启或会话过期后不可恢复。
+
 ## 显示规则
 
 - 金额和利率都是十进制字符串，`"0.12"` 表示 12%。显示用 `lib/format.ts`，不要先 `Number()`。

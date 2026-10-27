@@ -220,3 +220,39 @@ test('expired authentication can reset into a fresh session and discards prior s
   assert.equal(client.state.warning, null);
   assert.equal(client.state.busy, false);
 });
+
+test('live drafts are request scoped, withdrawn on cancel, and cannot reappear from late events',async t=>{
+  const client=setup(t),socket=await connect(client);
+  client.manual(false);const command=JSON.parse(socket.sent.at(-1)!);
+  const message=(type:string,data:any,id=command.request_id)=>socket.message({version:1,type,request_id:id,timestamp:new Date().toISOString(),data});
+  message('case.review',{case_id:'case1',revision:0,report:null,activities:[],checked:null});
+  message('case.checked',{case_id:'case1',revision:0,calculation:null,rules:[]});
+  message('report.draft',{attempt:1,status:'streaming',sections:[{id:'summary',kind:'summary',text:'当前草稿'}]},'other-request');
+  assert.equal((()=>client.state.draft)(),null);
+  message('report.draft',{attempt:1,status:'streaming',sections:[{id:'summary',kind:'summary',text:'当前草稿'}]});
+  assert.equal(client.state.draft?.sections[0]?.text,'当前草稿');
+  client.cancel();assert.equal(client.state.draft?.status,'discarded');assert.deepEqual(client.state.draft?.sections,[]);
+  message('report.draft',{attempt:1,status:'streaming',sections:[{id:'summary',kind:'summary',text:'迟到的草稿'}]});
+  assert.deepEqual(client.state.draft?.sections,[]);
+  message('task.error',{code:'TASK_CANCELLED',message:'任务已取消。'});
+  assert.equal(client.state.busy,false);assert(client.state.checked);
+  message('report.draft',{attempt:2,status:'streaming',sections:[{id:'summary',kind:'summary',text:'更迟的草稿'}]});
+  assert.deepEqual(client.state.draft?.sections,[]);
+});
+
+test('disconnect discards the draft while checked results and deduplicated activity recover from snapshot',async t=>{
+  const client=setup(t),socket=await connect(client);
+  client.manual(false);const command=JSON.parse(socket.sent.at(-1)!);
+  const activity={id:'activity1',timestamp:new Date().toISOString(),revision:1,stage:'calculate',kind:'analysis',status:'completed',message:'核算已完成'};
+  const checked={case_id:'case1',revision:1,calculation:null,rules:[]};
+  const snapshot={case_id:'case1',revision:1,report:null,activities:[activity],checked};
+  const message=(type:string,data:any)=>socket.message({version:1,type,request_id:command.request_id,timestamp:new Date().toISOString(),data});
+  message('case.review',snapshot);message('report.draft',{attempt:1,status:'streaming',sections:[{id:'summary',kind:'summary',text:'尚未完成'}]});
+  socket.serverClose();assert.equal(client.state.draft?.status,'discarded');assert(client.state.checked);
+  await eventually(()=>MockWebSocket.sockets.length===2,'reconnect was not created',2500);
+  const recovered=MockWebSocket.sockets[1]!;recovered.open();recovered.authenticate();
+  const get=JSON.parse(recovered.sent.at(-1)!);assert.equal(get.type,'case.get');
+  recovered.message({version:1,type:'case.snapshot',request_id:get.request_id,timestamp:new Date().toISOString(),data:snapshot});
+  assert.equal(client.state.draft,null);assert(client.state.checked);
+  assert.equal(client.state.activities.filter(a=>a.id==='activity1').length,1);
+});

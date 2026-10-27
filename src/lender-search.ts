@@ -219,7 +219,7 @@ export class LenderSearchService {
     this.injectedCaller = injectedCaller;
   }
 
-  async search(name: string, signal: AbortSignal, onProgress?: (category: string) => void): Promise<LenderSearchResult> {
+  async search(name: string, signal: AbortSignal, onProgress?: (category: string) => void,onCategory?:(category:LenderSearchCategory)=>void): Promise<LenderSearchResult> {
     if (!this.settings.url) throw new AppError('SEARCH_NOT_CONFIGURED', '尚未配置公开搜索服务。', 503);
     if (typeof name !== 'string' || name.trim().length < 2 || name.trim().length > 100 || /[\u0000-\u001f\u007f]/.test(name)) {
       throw new AppError('SEARCH_INVALID_NAME', '机构名称长度应为 2 到 100 个字符。', 400);
@@ -265,10 +265,12 @@ export class LenderSearchService {
           const response = await caller!(makeInput(institutionName, category), signal, timeout);
           if (signal.aborted) throw abortError();
           const sources = parseLenderSearchSources(response, institutionName);
-          return { kind: category.kind, status: sources.length ? 'sources_found' : 'no_indexed_results', sources };
+          const result:LenderSearchCategory={ kind: category.kind, status: sources.length ? 'sources_found' : 'no_indexed_results', sources };
+          onCategory?.(result);return result;
         } catch (error) {
           if (signal.aborted || (error instanceof AppError && error.code === 'TASK_CANCELLED')) throw abortError();
-          return { kind: category.kind, status: 'unavailable', sources: [], error_code: 'SEARCH_PROVIDER_ERROR' };
+          const result:LenderSearchCategory={ kind: category.kind, status: 'unavailable', sources: [], error_code: 'SEARCH_PROVIDER_ERROR' };
+          onCategory?.(result);return result;
         }
       }));
       categories.push(...outcomes);
@@ -276,7 +278,8 @@ export class LenderSearchService {
       if (signal.aborted || (error instanceof AppError && error.code === 'TASK_CANCELLED')) throw abortError();
       if (error instanceof AppError && error.code === 'SEARCH_NOT_CONFIGURED') throw error;
       for (const category of CATEGORY_QUERIES) {
-        categories.push({ kind: category.kind, status: 'unavailable', sources: [], error_code: 'SEARCH_PROVIDER_ERROR' });
+        const result:LenderSearchCategory={ kind: category.kind, status: 'unavailable', sources: [], error_code: 'SEARCH_PROVIDER_ERROR' };
+        categories.push(result);onCategory?.(result);
       }
     } finally {
       if (client) await client.close().catch(() => undefined);

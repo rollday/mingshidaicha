@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import sys
 from contextlib import redirect_stdout
-from typing import Any
+from typing import Any, Callable
 
 try:
     from .calculation import CalculationError, calculate
@@ -17,7 +17,10 @@ except ImportError:  # Support direct execution from the python directory.
     from pdf_tools import PdfError, parse_pdf
 
 
-def _dispatch(request: Any) -> dict[str, Any]:
+def _dispatch(
+    request: Any,
+    progress: Callable[[dict[str, Any]], None] | None = None,
+) -> dict[str, Any]:
     if not isinstance(request, dict):
         raise CalculationError("INVALID_REQUEST", "request must be a JSON object")
     operation = request.get("operation")
@@ -27,7 +30,7 @@ def _dispatch(request: Any) -> dict[str, Any]:
     if operation == "calculate_loan":
         return calculate_loan(payload)
     if operation == "parse_pdf":
-        return parse_pdf(payload)
+        return parse_pdf(payload, progress=progress)
     if operation == 'prepare_visual':
         from visual import prepare_visual
         return prepare_visual(payload)
@@ -38,12 +41,23 @@ def _dispatch(request: Any) -> dict[str, Any]:
 
 
 def main() -> int:
+    original_stdout = sys.stdout
     try:
         raw = sys.stdin.read()
         request = json.loads(raw, parse_constant=lambda value: (_ for _ in ()).throw(ValueError(value)))
+        progress = None
+        if isinstance(request, dict) and request.get("stream_progress") is True:
+            def write_progress(event: dict[str, Any]) -> None:
+                print(
+                    json.dumps({"progress": event}, ensure_ascii=False, separators=(",", ":")),
+                    file=original_stdout,
+                    flush=True,
+                )
+
+            progress = write_progress
         # Third-party libraries must not contaminate the machine-readable stdout channel.
         with redirect_stdout(sys.stderr):
-            result = _dispatch(request)
+            result = _dispatch(request, progress=progress)
         envelope = {"ok": True, "result": result}
     except (CalculationError, PdfError) as exc:
         error: dict[str, Any] = {"code": exc.code, "message": exc.message}
@@ -57,7 +71,7 @@ def main() -> int:
     except Exception as exc:  # Keep stdout protocol-safe even for unexpected runtime errors.
         envelope = {"ok": False, "error": {"code": "INTERNAL_ERROR", "message": "unexpected worker error"}}
         print(f"INTERNAL_ERROR: {type(exc).__name__}: {exc}", file=sys.stderr)
-    sys.stdout.write(json.dumps(envelope, ensure_ascii=False, separators=(",", ":")) + "\n")
+    original_stdout.write(json.dumps(envelope, ensure_ascii=False, separators=(",", ":")) + "\n")
     return 0
 
 
