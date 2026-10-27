@@ -1,0 +1,144 @@
+{
+  "rules": [
+    {
+      "id": "R01",
+      "title": "明示信息缺项",
+      "level": "red",
+      "effective_date": "2026-08-01",
+      "citation": {
+        "document": "个人贷款业务明示综合融资成本规定",
+        "article": "第二条",
+        "quote": "贷款人开展个人贷款业务时，应当向借款人展示综合融资成本明示表。综合融资成本明示表应注明贷款本金金额，并逐项列明贷款人及其合作机构收取的各息费项目及其收取方式、收取标准和收取主体，在此基础上综合计算正常履约情形下借款人承担的年化综合融资成本。",
+        "url": "https://www.nfra.gov.cn/chinese/OFFICE/PDF/1251479.pdf",
+        "effective_date": "2026-08-01",
+        "verification": "official_checked"
+      }
+    },
+    {
+      "id": "R02",
+      "title": "自算与标注差异",
+      "level": "yellow",
+      "effective_date": "2026-08-01",
+      "citation": {
+        "document": "个人贷款业务明示综合融资成本规定",
+        "article": "第二条",
+        "quote": "在此基础上综合计算正常履约情形下借款人承担的年化综合融资成本。",
+        "url": "https://www.nfra.gov.cn/chinese/OFFICE/PDF/1251479.pdf",
+        "effective_date": "2026-08-01",
+        "verification": "official_checked"
+      }
+    },
+    {
+      "id": "R03",
+      "title": "正常履约费用未明示",
+      "level": "red",
+      "effective_date": "2026-08-01",
+      "citation": {
+        "document": "个人贷款业务明示综合融资成本规定",
+        "article": "第二条",
+        "quote": "逐项列明贷款人及其合作机构收取的各息费项目及其收取方式、收取标准和收取主体",
+        "url": "https://www.nfra.gov.cn/chinese/OFFICE/PDF/1251479.pdf",
+        "effective_date": "2026-08-01",
+        "verification": "official_checked"
+      }
+    },
+    {
+      "id": "R04",
+      "title": "增信正常费用未计入",
+      "level": "red",
+      "effective_date": "2026-08-01",
+      "citation": {
+        "document": "个人贷款业务明示综合融资成本规定",
+        "article": "第一条、第二条",
+        "quote": "包括但不限于贷款利息、分期费用、增信服务费等正常履约成本",
+        "url": "https://www.nfra.gov.cn/chinese/OFFICE/PDF/1251479.pdf",
+        "effective_date": "2026-08-01",
+        "verification": "official_checked"
+      }
+    },
+    {
+      "id": "R05",
+      "title": "助贷平台直接收费待核实",
+      "level": "yellow",
+      "effective_date": "2025-10-01",
+      "citation": {
+        "document": "金融监管总局关于加强商业银行互联网助贷业务管理提升金融服务质效的通知",
+        "article": "第六条",
+        "quote": "将增信服务费计入借款人综合融资成本，明确综合融资成本区间，同时明确平台运营机构不得以任何形式向借款人收取息费",
+        "url": "https://www.nfra.gov.cn/chinese/OFFICE/PDF/1203545.pdf",
+        "effective_date": "2025-10-01",
+        "verification": "official_checked"
+      }
+    },
+    {
+      "id": "R06",
+      "title": "大学生小额贷款组合条件",
+      "level": "red",
+      "effective_date": "2021-02-24",
+      "citation": {
+        "document": "关于进一步规范大学生互联网消费贷款监督管理工作的通知",
+        "article": "一、（一）规范大学生互联网消费贷款放贷行为",
+        "quote": "小额贷款公司要加强贷款客户身份的实质性核验，不得将大学生设定为互联网消费贷款的目标客户群体，不得针对大学生群体精准营销，不得向大学生发放互联网消费贷款。",
+        "url": "https://www.gov.cn/zhengce/zhengceku/2021-03/17/content_5593569.htm",
+        "effective_date": "2021-02-24",
+        "verification": "official_checked"
+      }
+    },
+    {
+      "id": "R07",
+      "title": "主体资质核验提示",
+      "level": "yellow",
+      "effective_date": "2021-02-24",
+      "citation": {
+        "document": "关于进一步规范大学生互联网消费贷款监督管理工作的通知",
+        "article": "一、（一）规范大学生互联网消费贷款放贷行为",
+        "quote": "未经银行业监督管理部门或地方金融监督管理部门批准设立的机构不得为大学生提供信贷服务。",
+        "url": "https://www.gov.cn/zhengce/zhengceku/2021-03/17/content_5593569.htm",
+        "effective_date": "2021-02-24",
+        "verification": "official_checked"
+      }
+    },
+    {
+      "id": "R08",
+      "title": "特定用途与资金直付提示",
+      "level": "yellow",
+      "effective_date": null,
+      "citation": {
+        "document": "未找到可核验的对应官方条文",
+        "article": "待核实",
+        "quote": "",
+        "url": "",
+        "effective_date": "",
+        "verification": "local_material_only"
+      }
+    },
+    {
+      "id": "R09",
+      "title": "营销话术人工核验提示",
+      "level": "blue",
+      "effective_date": null,
+      "citation": {
+        "document": "未找到可核验的对应官方条文",
+        "article": "待核实",
+        "quote": "",
+        "url": "",
+        "effective_date": "",
+        "verification": "local_material_only"
+      }
+    },
+    {
+      "id": "R10",
+      "title": "或有成本披露缺失",
+      "level": "yellow",
+      "effective_date": "2026-08-01",
+      "citation": {
+        "document": "个人贷款业务明示综合融资成本规定",
+        "article": "第二条",
+        "quote": "同时，逐项列明贷款逾期或被挪用等违约情形下的或有成本项目及其收取标准和收取主体。",
+        "url": "https://www.nfra.gov.cn/chinese/OFFICE/PDF/1251479.pdf",
+        "effective_date": "2026-08-01",
+        "verification": "official_checked"
+      }
+    }
+  ]
+}

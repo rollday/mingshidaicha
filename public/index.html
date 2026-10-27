@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="zh-CN">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>明示贷查 · 全流程联调</title><link rel="stylesheet" href="/app.css"><script src="/app.js" defer></script></head>
+<body>
+<header><div class="wrap header"><strong>明示贷查</strong><span class="muted">全流程联调 · 请使用模拟或脱敏材料</span><span id="connection" class="tag">连接中</span></div></header>
+<main class="wrap">
+  <div class="intro"><div><h1>从贷款材料到核查报告</h1><p class="muted">读取材料，核对事实，计算成本，再查看带证据的解释。</p></div><button id="new-session" class="secondary">结束本次会话</button></div>
+  <ol class="steps"><li id="step-input" class="active">上传材料</li><li id="step-review">确认事实</li><li id="step-report">阅读报告</li></ol>
+  <div id="notice" role="status" hidden></div>
+  <section id="input-section" class="card">
+    <h2>提供材料</h2>
+    <div class="grid"><label>借款人身份<select id="student"><option value="unknown">尚不确定</option><option value="false">非在校学生</option><option value="true">在校学生</option></select></label><label>借款用途<input id="purpose" placeholder="如普通消费、学费、职业培训"></label></div>
+    <div id="samples" class="samples"></div>
+    <label>上传 PDF / PNG / JPG<input id="files" type="file" multiple accept="application/pdf,image/png,image/jpeg"></label>
+    <p class="muted small">每份材料不超过 10MB；PDF 不超过 30 页。每份材料最多识别 4 张图片页，图像转录需要人工核对。</p>
+    <div id="file-list"></div>
+    <label>也可以粘贴材料文字<textarea id="source-text" rows="6" placeholder="可同时提供明示表、合同条款、还款安排，请注明各部分来源。"></textarea></label>
+    <div class="actions"><button id="start" disabled>读取并对照材料</button><button id="manual" class="secondary" disabled>手工录入</button><button id="cancel" class="secondary" hidden>取消当前任务</button></div>
+  </section>
+  <section id="progress-section" class="card" hidden><h2>核查进度</h2><ol id="progress" aria-live="polite"></ol></section>
+  <section id="review-section" hidden>
+    <div class="card"><h2>确认读取结果</h2><p class="muted">原文摘录供你核对。空白或“待确认”不会被当作零或否；只有确认后的事实用于核查。</p><ul id="questions" class="questions"></ul>
+      <div id="fields"></div><h3>费用清单</h3><div id="fees"></div><button id="add-fee" class="secondary">补充费用</button>
+      <details><summary>完整事实与逐期还款表</summary><p class="muted small">可编辑完整数据；保存后会刷新上面的表单。金额使用字符串，年利率用小数，例如 0.12 表示 12%。</p><textarea id="advanced" rows="16" spellcheck="false"></textarea><button id="apply-json" class="secondary">应用完整数据</button></details>
+      <div class="actions"><button id="confirm">确认，计算并生成报告</button><button id="retry" class="secondary" hidden>重试 AI 报告</button></div>
+    </div>
+    <div class="card"><h2>材料与证据</h2><div id="evidence"></div><details><summary>查看全部识别文字</summary><div id="materials"></div></details></div>
+  </section>
+  <section id="report-section" class="card" hidden><div class="report-heading"><h2>核查报告</h2><span id="report-mode" class="tag"></span></div><div id="report"></div><button id="download" class="secondary">下载报告数据</button></section>
+  <footer class="muted small">本工具基于材料和用户确认事实进行核查，不构成法律意见或借贷建议。会话在无操作十五分钟后过期；结束会话会删除临时材料。</footer>
+</main></body></html>

@@ -1,0 +1,17 @@
+node_modules/
+dist/
+.venv/
+.env
+.env.*
+!.env.example
+__pycache__/
+*.pyc
+.runtime/
+coverage/
+.codebase-memory/
+# Local source materials and server-specific deployment details
+ai应用创新/
+计算口径说明.docx
+设计稿v1.html
+deploy/README.md
+deploy/loancheck.nginx.conf
