@@ -9,9 +9,10 @@
   },
   "scripts": {
     "dev": "node --env-file-if-exists=.env --watch src/index.ts",
+    "dev:frontend": "pnpm --dir frontend dev",
     "start": "node --env-file-if-exists=.env dist/src/index.js",
-    "build": "tsc -p tsconfig.json",
-    "typecheck": "tsc --noEmit",
+    "build": "tsc -p tsconfig.json && pnpm --dir frontend build",
+    "typecheck": "tsc --noEmit && pnpm --dir frontend typecheck",
     "test": "node --test tests/*.test.ts",
     "test:python": ".venv/bin/python -m unittest discover -s tests/python -v",
     "check:model": "node --env-file-if-exists=.env scripts/check-model.ts",

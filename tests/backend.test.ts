@@ -76,6 +76,19 @@ test('financial schema refuses float amounts and unknown fields', () => {
   assert.equal(calculationSchema.safeParse({ ...input, python_path: '/etc/passwd' }).success, false);
 });
 
+test('static UI routes preserve the debug page and never expose arbitrary workspace paths', async t => {
+  const h = await harness(); t.after(() => h.backend.close());
+  const root = await fetch(h.url + '/'); assert.equal(root.status,200);
+  const html = await root.text();
+  assert.match(root.headers.get('content-security-policy') ?? '', /script-src 'self'/);
+  for (const asset of [...html.matchAll(/(?:src|href)="(\/assets\/[^" ]+)"/g)].map(match => match[1]!)) {
+    const response = await fetch(h.url + asset); assert.equal(response.status,200);
+    assert.match(response.headers.get('content-type') ?? '', asset.endsWith('.css') ? /text\/css/ : /javascript/);
+  }
+  assert.equal((await fetch(h.url + '/debug')).status,200);
+  for (const path of ['/.env','/assets/..%2f..%2f.env','/assets/missing.js','/api/missing']) assert.equal((await fetch(h.url + path)).status,404);
+});
+
 test('OpenAI streaming extraction goes through WS review before calculation', async t => {
   const extracted = {
     calculation: input,

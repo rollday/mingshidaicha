@@ -6,7 +6,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends python3 python3
     && python3 -m venv /opt/venv
 COPY python/requirements.txt /tmp/requirements.txt
 RUN /opt/venv/bin/pip install --no-cache-dir -r /tmp/requirements.txt
-COPY package.json pnpm-lock.yaml ./
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+COPY frontend/package.json frontend/package.json
 RUN corepack enable && corepack prepare pnpm@12.14.0 --activate \
     && pnpm install --prod --frozen-lockfile
 COPY dist ./dist

@@ -9,6 +9,9 @@ __pycache__/
 .runtime/
 coverage/
 .codebase-memory/
+public/ui/
+明示贷查_设计交接包.zip
+数据与组件.zip
 # Local source materials and server-specific deployment details
 ai应用创新/
 计算口径说明.docx
