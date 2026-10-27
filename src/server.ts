@@ -24,7 +24,7 @@ export async function createBackend(settings: Config = config) {
   const sessions = new Map<string, Session>();
   const model = new ModelClient(settings);
   const websocket = new WebSocketServer({ noServer: true, maxPayload: 512 * 1024, perMessageDeflate: false });
-  let running = 0, closing = false;
+  let running = 0, rendering = 0, closing = false;
 
   function send(ws: WebSocket, type: string, requestId: string | null, data: unknown) {
     if (ws.readyState !== WebSocket.OPEN) return;
@@ -104,7 +104,7 @@ export async function createBackend(settings: Config = config) {
       }
       if (req.method === 'GET' && pathname === '/api/samples') return json(res, 200, samples);
       if (req.method === 'GET' && pathname === '/api/health') {
-        return json(res, 200, { status: 'ok', model: settings.model, model_configured: Boolean(settings.apiKey), transport: 'websocket', running_tasks: running });
+        return json(res, 200, { status: 'ok', model: settings.model, model_configured: Boolean(settings.apiKey), search_configured: Boolean(settings.searchMcpURL), transport: 'websocket', running_tasks: running });
       }
       if (req.method === 'POST' && pathname === '/api/sessions') {
         if (sessions.size >= 100) throw new AppError('SESSION_LIMIT', '会话数已达上限。', 429);
@@ -136,6 +136,28 @@ export async function createBackend(settings: Config = config) {
         if (!file) throw new AppError('DOCUMENT_NOT_FOUND', '当前会话中找不到该材料。', 404);
         res.writeHead(200, { 'content-type': file.mime, 'cache-control': 'no-store', 'x-content-type-options': 'nosniff' });
         res.end(await readFile(file.path)); return;
+      }
+      const preview = /^\/api\/documents\/([a-f0-9-]+)\/pages\/([1-9][0-9]*)\.png$/.exec(pathname);
+      if (req.method === 'GET' && preview) {
+        const session = httpSession(req), file = session.documents.get(preview[1]!);
+        if (!file) throw new AppError('DOCUMENT_NOT_FOUND', '当前会话中找不到该材料。', 404);
+        const page = Number(preview[2]);
+        if (!Number.isSafeInteger(page) || page > settings.maxPdfPages) throw new AppError('INVALID_PAGE', '页码超出允许范围。', 422);
+        if (rendering >= 2) throw new AppError('PREVIEW_BUSY', '预览服务繁忙，请稍后重试。', 429);
+        const abort = new AbortController();
+        const disconnect = () => { if (!res.writableEnded) abort.abort(); };
+        res.on('close', disconnect); rendering++;
+        try {
+          const rendered = await runPython(settings, 'prepare_visual', { path: file.path, pages: [page], max_pages: 1 }, abort.signal) as { images: { data: string }[] };
+          if (!sessions.has(session.token)) throw new AppError('UNAUTHORIZED', '会话已结束。', 401);
+          const image = rendered.images[0];
+          if (!image) throw new AppError('PREVIEW_UNAVAILABLE', '无法生成页面预览。', 422);
+          if (!res.destroyed) {
+            res.writeHead(200, { 'content-type': 'image/png', 'cache-control': 'no-store', 'x-content-type-options': 'nosniff' });
+            res.end(Buffer.from(image.data, 'base64'));
+          }
+        } finally { rendering--; res.off('close', disconnect); }
+        return;
       }
       throw new AppError('NOT_FOUND', '接口不存在。', 404);
     } catch (error) {
@@ -193,7 +215,7 @@ export async function createBackend(settings: Config = config) {
         broadcast(activeSession, 'task.started', id, { operation: command.type });
         void (async () => {
           try {
-            if (command.type === 'case.start' || command.type === 'case.confirm' || command.type === 'case.report') {
+            if (command.type === 'case.start' || command.type === 'case.confirm' || command.type === 'case.report' || command.type === 'lender.search') {
               await activeSession.workflow.execute(command, abort.signal, (type, data) => broadcast(activeSession, type, requestId, data), documentId => activeSession.documents.get(documentId));
             } else if (command.type === 'audit.calculate') {
               broadcast(activeSession, 'task.progress', requestId, { stage: 'calculate' });

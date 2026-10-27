@@ -20,6 +20,8 @@ const { document_id } = await response.json();
 
 `GET /api/documents/{document_id}` 需同样的会话令牌；只能读本会话材料。`DELETE /api/sessions/current` 清理案件和材料并中止任务。`GET /api/samples` 是自建模拟样本，不是测试金标准；`GET /api/health` 不会主动探测模型。
 
+`GET /api/documents/{document_id}/pages/{page}.png` 返回会话内材料的原始页面预览，同样使用 `X-Session-Token`。页面从 1 开始，最长边不超过 1600 像素，服务同时最多处理两个预览；超出返回 `PREVIEW_BUSY`。请求中断会取消渲染，材料不属于当前会话时返回 404。
+
 ## 完整流程
 
 发送 `case.start`：
@@ -54,13 +56,23 @@ task.started → case.confirmed → case.checked
 ```ts
 {
   document_id, page_count, needs_vision,
-  pages: [{ page, width, height, text, blocks: [{ bbox: [x0,y0,x1,y1], text }] }]
+  pages: [{ page, width, height, rotation, text,
+    blocks: [{ bbox: [x0,y0,x1,y1], display_bbox: [x0,y0,x1,y1], text }],
+    words: [{ bbox: [x0,y0,x1,y1], display_bbox: [x0,y0,x1,y1], text }] }]
 }
 ```
 
-前端按 `document_id` 缓存。坐标是 PyMuPDF 页面空间中的文本块范围，页面绘制时需按页面尺寸、缩放与旋转做转换；不是 `evidence.quote` 的逐字矩形。跨块引文需要文本匹配才能进一步定位。
+前端按 `document_id` 缓存。`bbox` 为未旋转页面坐标，`display_bbox` 已转换到渲染页面坐标，配合 `width/height` 缩放。前端按只移除空白的原文匹配定位词级范围，找不到词级匹配时才退到文本块。多处相同文本会标出多处候选并提示核对；不修改数字或标点来制造匹配。
 
-扫描 PDF 的该事件产生于视觉转录之前，空白文本页没有后续 OCR 坐标。直接上传 PNG/JPG 不发 `document.parsed`。这两种情况用页码和带 `vision_transcript` 标记的摘录展示，并让用户对照原图。当前骨架保留 PDF 布局缓存，提供按证据定位材料与页码的文本视图，尚未实现 PDF 页面覆盖高亮。
+扫描 PDF 的该事件产生于视觉转录之前，空白文本页没有后续 OCR 坐标。直接上传 PNG/JPG 不发 `document.parsed`。这两种情况展示原始页面与带 `vision_transcript` 标记的摘录，让用户对照原图，不伪造文字坐标。
+
+## 放贷方公开来源检索
+
+`lender.search {request_id,case_id,expected_revision,name?}` 在用户点击后检索机构名称；省略 `name` 时使用确认的放贷方名称。通过 `task.progress` 的 `search_license / search_registry / search_penalty` 阶段展示真实进度，最终返回 `lender.result {case_id,revision,result}`。
+
+`result` 包含 `name`、`queried_at`、三类 `categories`、来源链接及摘要、名称是否出现在摘要中，以及限制说明。状态区分 `sources_found / no_indexed_results / unavailable`。搜索只保留政府域名来源，不抓取结果链接、不绕过官方查询站点，也不将摘要当作许可状态或处罚事实。没有结果不能解释为没有牌照。
+
+结果在案件快照的 `lender_search` 和报告数据的 `public_source_search` 中保留；不修改确认事实、规则状态或财务计算。重新确认事实后清除原检索记录。服务端从 `SEARCH_MCP_URL`、`SEARCH_MCP_AUTHORIZATION`、`SEARCH_TIMEOUT_MS` 读取 MCP 配置，凭据不发给前端或 Python。
 
 ## 显示规则
 
@@ -71,7 +83,7 @@ task.started → case.confirmed → case.checked
 - `fees[].amount` 是单次金额，合计按费用 `id` 连接 `fee_totals`。或有费用、发生条件未知的费用与已确认正常费用分开展示。
 - `included_in_cashflows`（已含在到账或还款额）和 `included_in_disclosed_cost`（已计入披露年化）独立。不能合成一个“是否计入”。
 - 规则四态都要显示：`triggered / not_triggered / insufficient_data / not_applicable`；`yellow` 映射设计 token `amber`。
-- 后端没有 `confidence_tier`，也没有真实机构联网核验接口。前端只展示证据与待核实状态，不伪造置信度或核验进度。
+- 后端没有 `confidence_tier`。机构检索提供公开来源线索，不直接判断持牌与否；前端不伪造置信度或核验结论。
 - 清空金额表示 `null`，不自动变成零。若确认不存在费用，应明确删除费用项或填写零。
 
 ## 连接中断与有效期

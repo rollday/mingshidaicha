@@ -42,6 +42,9 @@ def parse_pdf(payload: Any) -> dict[str, Any]:
         for page_index in range(page_count):
             page = document.load_page(page_index)
             rect = page.rect
+            rotation = page.rotation_matrix
+            def display_box(box):
+                return [float(v) for v in fitz.Rect(*box) * rotation]
             blocks = []
             for block in page.get_text("blocks"):
                 if len(block) < 5:
@@ -49,9 +52,11 @@ def parse_pdf(payload: Any) -> dict[str, Any]:
                 text = str(block[4]).strip()
                 if not text:
                     continue
-                blocks.append({"bbox": [float(v) for v in block[:4]], "text": text})
+                blocks.append({"bbox": [float(v) for v in block[:4]], "display_bbox": display_box(block[:4]), "text": text})
+            words = [{"bbox": [float(v) for v in word[:4]], "display_bbox": display_box(word[:4]), "text": str(word[4])}
+                     for word in page.get_text("words", sort=True)]
             pages.append({"page": page_index + 1, "width": float(rect.width), "height": float(rect.height),
-                          "text": page.get_text("text"), "blocks": blocks})
+                          "rotation": page.rotation, "text": page.get_text("text"), "blocks": blocks, "words": words})
         return {"page_count": page_count, "pages": pages,
                 "needs_vision": any(not p["text"].strip() for p in pages)}
     finally:

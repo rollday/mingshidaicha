@@ -14,6 +14,9 @@ const env = z.object({
   MAX_UPLOAD_BYTES: z.coerce.number().int().positive().default(10485760),
   MAX_PDF_PAGES: z.coerce.number().int().positive().max(100).default(30),
   MAX_CONCURRENT_TASKS: z.coerce.number().int().positive().default(4),
+  SEARCH_MCP_URL: z.preprocess(value=>value===''?undefined:value,z.url().optional()),
+  SEARCH_MCP_AUTHORIZATION: z.string().optional(),
+  SEARCH_TIMEOUT_MS: z.coerce.number().int().min(1000).max(60000).default(20000),
 }).parse(process.env);
 
 export const config = {
@@ -23,6 +26,7 @@ export const config = {
   allowedOrigins: new Set(env.ALLOWED_ORIGINS.split(',').map(x => x.trim()).filter(Boolean)),
   modelTimeout: env.MODEL_TIMEOUT_MS, maxUpload: env.MAX_UPLOAD_BYTES,
   maxPdfPages: env.MAX_PDF_PAGES, maxConcurrent: env.MAX_CONCURRENT_TASKS,
+  searchMcpURL: env.SEARCH_MCP_URL, searchAuthorization: env.SEARCH_MCP_AUTHORIZATION, searchTimeout: env.SEARCH_TIMEOUT_MS,
 };
 
 export type Config = typeof config;

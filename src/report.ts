@@ -2,6 +2,7 @@ import { z } from 'zod';
 import type { CaseFacts, Evidence, LoanResult, RuleResult } from './domain.ts';
 import { CaseModel } from './case-model.ts';
 import { AppError } from './errors.ts';
+import type { LenderSearchResult } from './lender-search.ts';
 
 export type Correction = { field: string; before: unknown; after: unknown };
 export type ReportInput = { facts: CaseFacts; calculation: LoanResult | null; calculation_error: { code: string; message: string } | null; rules: RuleResult[]; evidence: Evidence[]; corrections: Correction[] };
@@ -111,6 +112,7 @@ summary与每项解释要具体对应输入，给用户易懂的中文。limitat
     facts: input.facts, calculation: input.calculation, calculation_error: input.calculation_error,
     rules: input.rules, evidence: input.evidence, corrections: input.corrections, narrative: writing,
     disclaimer: '本报告基于提供材料进行事实比对，不构成法律意见或借贷建议。',
+    public_source_search: null as LenderSearchResult | null,
   };
 }
 export type AuditReport = Awaited<ReturnType<typeof generateReport>>;

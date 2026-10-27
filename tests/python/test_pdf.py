@@ -54,3 +54,20 @@ class PdfTests(unittest.TestCase):
             with self.assertRaises(PdfError) as error:
                 parse_pdf({"path": str(path)})
             self.assertEqual(error.exception.code, "PDF_OPEN_FAILED")
+
+    def test_rotated_word_boxes_use_the_rendered_page_space(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / 'rotated.pdf'
+            doc = fitz.open()
+            page = doc.new_page(width=300, height=200)
+            page.insert_text((30,50), 'Principal 10000 yuan')
+            page.set_rotation(90)
+            doc.save(path); doc.close()
+            page = parse_pdf({'path': str(path)})['pages'][0]
+            self.assertEqual((page['width'],page['height']), (200,300))
+            self.assertEqual(page['rotation'],90)
+            word = next(w for w in page['words'] if w['text'] == '10000')
+            x0,y0,x1,y1 = word['display_bbox']
+            self.assertTrue(0 <= x0 < x1 <= page['width'])
+            self.assertTrue(0 <= y0 < y1 <= page['height'])
+            self.assertNotEqual(word['bbox'],word['display_bbox'])

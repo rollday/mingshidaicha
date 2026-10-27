@@ -6,6 +6,7 @@ import { caseFactsSchema } from '../src/domain.ts';
 import { CaseWorkflow } from '../src/cases.ts';
 import { displayDecimal, generateReport, type ReportInput } from '../src/report.ts';
 import { CaseModel, locateQuote } from '../src/case-model.ts';
+import {LenderSearchService} from '../src/lender-search.ts';
 
 function facts() {
   return caseFactsSchema.parse({ borrower: { is_student: false, purpose: '普通消费' }, lender: { type: 'bank', internet_assisted: false },
@@ -52,6 +53,24 @@ test('report requires confirmation and cases are scoped to their session workflo
   await workflow.execute({ type: 'case.start', request_id: 'a', documents: [], manual_facts: facts() }, new AbortController().signal, (_type, data: any) => { id = data.case_id; }, () => undefined);
   await assert.rejects(workflow.execute({ type: 'case.report', request_id: 'b', case_id: id, expected_revision: 0 }, new AbortController().signal, () => {}, () => undefined), { code: 'CONFIRMATION_REQUIRED' });
   assert.throws(() => new CaseWorkflow({ ...config, apiKey: undefined }).get(id), { code: 'CASE_NOT_FOUND' });
+});
+
+test('public source search stays versioned and never mutates licensing facts or risk rules',async()=>{
+  const workflow=new CaseWorkflow({...config,apiKey:undefined});
+  workflow.search=new LenderSearchService({url:'https://search.example/mcp',timeout:1000},async()=>({content:[{type:'text',text:'[1] Title: 示例银行公告\nURL: https://www.nfra.gov.cn/example\n[Text]: 示例银行相关公开信息'}]}));
+  let id='';const emit=(type:string,data:any)=>{if(type==='case.review')id=data.case_id;};
+  const original=facts();original.lender.name='示例银行';
+  const signal=new AbortController().signal;
+  await workflow.execute({type:'case.start',request_id:'a',documents:[],manual_facts:original},signal,emit,()=>undefined);
+  await workflow.execute({type:'case.confirm',request_id:'b',case_id:id,expected_revision:0,facts:original},signal,emit,()=>undefined);
+  const record=workflow.get(id),before=structuredClone(record.report!.rules);
+  await workflow.execute({type:'lender.search',request_id:'c',case_id:id,expected_revision:1},signal,emit,()=>undefined);
+  assert.equal(record.facts.lender.licensed,null);assert.deepEqual(record.report!.rules,before);assert.equal(record.revision,1);
+  assert.equal(record.report!.public_source_search?.name,'示例银行');
+  assert.equal(record.lender_search?.license_determination,'not_performed');
+  await assert.rejects(workflow.execute({type:'lender.search',request_id:'d',case_id:id,expected_revision:0},signal,emit,()=>undefined),{code:'REVISION_CONFLICT'});
+  await workflow.execute({type:'case.confirm',request_id:'e',case_id:id,expected_revision:1,facts:original},signal,emit,()=>undefined);
+  assert.equal(record.lender_search,null);assert.equal(record.report!.public_source_search,null);
 });
 
 test('missing calculation data yields a clearly partial template report during model outage', async () => {

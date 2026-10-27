@@ -5,6 +5,7 @@ import type { CaseWorkflow } from '../src/cases.ts';
 import type { samples } from '../src/samples.ts';
 export type { CaseFacts, Evidence, LoanResult, RuleResult, SourceMaterial } from '../src/domain.ts';
 export type { AuditReport, Correction } from '../src/report.ts';
+export type { LenderSearchResult, LenderSearchCategory, LenderSearchSource } from '../src/lender-search.ts';
 export type ClientCommand = input<typeof commandSchema>;
 export type CaseSnapshot = ReturnType<CaseWorkflow['view']>;
 export type CaseReview = CaseSnapshot & { requires_confirmation: true };
@@ -13,8 +14,9 @@ export type Session = { session_id: string; session_token: string; websocket_pat
 export type ApiError = { code: string; message: string; details?: unknown };
 export type DocumentParsed = {
   document_id: string; page_count: number; needs_vision: boolean;
-  pages: { page: number; width: number; height: number; text: string; blocks: { bbox: [number, number, number, number]; text: string }[] }[];
+  pages: { page: number; width: number; height: number; rotation?: number; text: string; blocks: LayoutText[]; words?: LayoutText[] }[];
 };
+export type LayoutText = { bbox: [number, number, number, number]; display_bbox?: [number, number, number, number]; text: string };
 type Envelope<T extends string, D> = { version: 1; type: T; request_id: string | null; timestamp: string; data: D };
 export type ServerEvent =
   | Envelope<'session.ready', { session_id: string }>
@@ -30,5 +32,6 @@ export type ServerEvent =
   | Envelope<'case.calculation_unavailable', ApiError & { case_id: string; missing_fields: string[] }>
   | Envelope<'report.warning', ApiError & { case_id: string }>
   | Envelope<'report.result', { case_id: string; revision: number; report: import('../src/report.ts').AuditReport }>
+  | Envelope<'lender.result', {case_id:string;revision:number;result:import('../src/lender-search.ts').LenderSearchResult}>
   | Envelope<'task.completed', { elapsed_ms: number }>
   | Envelope<'task.error' | 'request.error', ApiError>;

@@ -8,6 +8,8 @@ Node.js 24 + TypeScript + OpenAI 官方 SDK + pnpm + WebSocket。Python 负责�
 
 新版 React 前端骨架位于 `frontend/`，包括上传、核对、报告三屏；[前端交接说明](frontend/README.md) 和 [接口契约](docs/api.md) 给出了开发入口与数据边界。`pnpm build` 会同时构建后端与前端，构建后根路径显示新版界面，原联调页保留在 `/debug`。
 
+文本 PDF 支持原始页面预览与原文匹配高亮，扫描件显示原图和转录摘录。报告页支持可选的 MCP 公开来源检索：配置 `SEARCH_MCP_URL` 和完整的 `SEARCH_MCP_AUTHORIZATION` 请求头值后，用户可以按机构名称查找许可、登记和处罚页面；结果只作为可复核线索，不自动认定资质或修改规则结论。
+
 ```bash
 pnpm install --frozen-lockfile
 uv venv .venv
