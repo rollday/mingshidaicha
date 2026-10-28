@@ -10,6 +10,7 @@ import type {
   ReportDraft,
   RuleResult,
 } from '../types/audit.ts';
+import { rulePresentation, summarizeRules } from '../../../shared/rule-policy.ts';
 import { Button, Card, Tag, type Tone } from './base/index.tsx';
 
 const PAGE_TEXT_LIMIT = 8_000;
@@ -19,13 +20,6 @@ const activityStatus: Record<Activity['status'], { label: string; tone: Tone }> 
   started: { label: '已开始', tone: 'blue' },
   completed: { label: '已完成', tone: 'green' },
   warning: { label: '需留意', tone: 'amber' },
-};
-
-const ruleStatus: Record<RuleResult['status'], { label: string; tone: Tone }> = {
-  triggered: { label: '已命中', tone: 'red' },
-  not_triggered: { label: '未命中', tone: 'green' },
-  insufficient_data: { label: '信息不足', tone: 'amber' },
-  not_applicable: { label: '不适用', tone: 'neutral' },
 };
 
 const categoryName: Record<LenderSearchCategory['kind'], string> = {
@@ -119,20 +113,25 @@ function AnalysisSummary({
       ) : null}
       {linkedRules.length ? (
         <ul className="mt-3 flex flex-col gap-2">
-          {linkedRules.slice(0, 8).map((rule) => (
-            <li key={rule.rule_id} className="rounded-md border border-line bg-surface px-3 py-2 text-sm">
-              <div className="flex flex-wrap items-center gap-2">
-                <Tag tone={ruleStatus[rule.status].tone}>{ruleStatus[rule.status].label}</Tag>
-                <span className="font-medium">{rule.rule_id} · {rule.title}</span>
-              </div>
-              <p className="mt-2 whitespace-pre-wrap text-ink-soft">{excerpt(rule.reason)}</p>
-              {rule.citation?.url ? (
-                <a className="mt-2 inline-block break-all text-blue underline" href={rule.citation.url} target="_blank" rel="noreferrer">
-                  查看规则来源{rule.citation.document ? `：${rule.citation.document}` : ''}
-                </a>
-              ) : null}
-            </li>
-          ))}
+          {linkedRules.slice(0, 8).map((rule) => {
+            const presentation = rulePresentation(rule);
+            return (
+              <li key={rule.rule_id} className="rounded-md border border-line bg-surface px-3 py-2 text-sm">
+                <div className="flex flex-wrap items-center gap-2">
+                  <Tag tone={presentation.tone as Tone}>{presentation.label}</Tag>
+                  <Tag tone="neutral">{presentation.natureLabel}</Tag>
+                  <span className="font-medium">{rule.rule_id} · {rule.title}</span>
+                </div>
+                <p className="mt-2 whitespace-pre-wrap text-ink-soft">{excerpt(rule.reason)}</p>
+                <p className="mt-1 text-xs text-mute">{presentation.factLabel}</p>
+                {rule.citation?.url ? (
+                  <a className="mt-2 inline-block break-all text-blue underline" href={rule.citation.url} target="_blank" rel="noreferrer">
+                    查看规则来源{rule.citation.document ? `：${rule.citation.document}` : ''}
+                  </a>
+                ) : null}
+              </li>
+            );
+          })}
           {linkedRules.length > 8 ? <li className="text-xs text-mute">另有 {linkedRules.length - 8} 项关联规则。</li> : null}
         </ul>
       ) : null}
@@ -181,34 +180,39 @@ function RulePreview({ rules }: { rules: RuleResult[] }) {
   if (!rules.length) return <p className="text-sm text-mute">暂无规则检查结果。</p>;
   return (
     <ul className="divide-y divide-line">
-      {rules.map((rule) => (
-        <li key={rule.rule_id} id={`rule-${rule.rule_id}`} className="py-3 first:pt-0 last:pb-0">
-          <div className="flex flex-wrap items-center gap-2">
-            <Tag tone={ruleStatus[rule.status].tone}>{ruleStatus[rule.status].label}</Tag>
-            <span className="text-sm font-medium">{rule.rule_id} · {rule.title}</span>
-          </div>
-          <p className="mt-2 whitespace-pre-wrap text-sm leading-relaxed text-ink-soft">{rule.reason}</p>
-          {rule.citation ? (
-            <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-mute">
-              <span>{rule.citation.document}{rule.citation.article ? ` · ${rule.citation.article}` : ''}</span>
-              {rule.citation.url ? (
-                <a className="break-all text-blue underline" href={rule.citation.url} target="_blank" rel="noreferrer">查看来源</a>
-              ) : null}
+      {rules.map((rule) => {
+        const presentation = rulePresentation(rule);
+        return (
+          <li key={rule.rule_id} id={`rule-${rule.rule_id}`} className="py-3 first:pt-0 last:pb-0">
+            <div className="flex flex-wrap items-center gap-2">
+              <Tag tone={presentation.tone as Tone}>{presentation.label}</Tag>
+              <Tag tone="neutral">{presentation.natureLabel}</Tag>
+              {presentation.levelLabel ? <Tag tone={presentation.tone as Tone}>{presentation.levelLabel}</Tag> : null}
+              <span className="text-sm font-medium">{rule.rule_id} · {rule.title}</span>
             </div>
-          ) : null}
-        </li>
-      ))}
+            <p className="mt-2 whitespace-pre-wrap text-sm leading-relaxed text-ink-soft">{rule.reason}</p>
+            <p className="mt-1 text-xs text-mute">{presentation.factLabel}</p>
+            {rule.citation ? (
+              <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-mute">
+                <span>{rule.citation.document}{rule.citation.article ? ` · ${rule.citation.article}` : ''}</span>
+                {rule.citation.url ? (
+                  <a className="break-all text-blue underline" href={rule.citation.url} target="_blank" rel="noreferrer">查看来源</a>
+                ) : null}
+              </div>
+            ) : null}
+          </li>
+        );
+      })}
     </ul>
   );
 }
 
 function RulePreviewDetails({ rules }: { rules: RuleResult[] }) {
-  const triggered = rules.filter((rule) => rule.status === 'triggered').length;
-  const needsReview = rules.filter((rule) => rule.status === 'insufficient_data').length;
+  const { counts } = summarizeRules(rules);
   return (
     <details className="rounded-md border border-line">
       <summary className="cursor-pointer px-4 py-3 text-sm font-medium">
-        规则检查（命中 {triggered} · 待核实 {needsReview} · 总项数 {rules.length}）
+        规则检查（确认问题 {counts.confirmed_issues} · 待核实 {counts.pending_checks} · 阅读提示 {counts.advisory_hints} · 总项数 {rules.length}）
       </summary>
       <div className="max-h-96 overflow-y-auto px-4 pb-4">
         <RulePreview rules={rules} />

@@ -125,7 +125,7 @@ test('evidence references contain only IDs present in supplied evidence', () => 
   assert.deepEqual(byId(run(facts), 'R01').evidence_ids, []);
 });
 
-test('R08 remains a yellow fact pattern and R09 remains a blue wording hint', () => {
+test('R08 and R09 are blue advisory hints rather than confirmed issues', () => {
   const facts: CaseFacts = {
     ...baseFacts,
     borrower: { is_student: false, purpose: '职业培训' },
@@ -134,7 +134,9 @@ test('R08 remains a yellow fact pattern and R09 remains a blue wording hint', ()
   };
   const rows = run(facts);
   assert.equal(byId(rows, 'R08').status, 'triggered');
-  assert.equal(byId(rows, 'R08').level, 'yellow');
+  assert.equal(byId(rows, 'R08').level, 'blue');
+  assert.equal(byId(rows, 'R08').nature, 'advisory');
+  assert.equal(byId(rows, 'R08').risk_level, null);
   assert.equal(byId(rows, 'R09').status, 'triggered');
   assert.equal(byId(rows, 'R09').level, 'blue');
   assert.equal(byId(rows, 'R08').citation?.verification, 'local_material_only');

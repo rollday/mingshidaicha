@@ -1,16 +1,7 @@
 import { useState } from 'react';
 import type { AuditReport, RuleResult } from '../../types/audit.ts';
+import { rulePresentation } from '../../../../shared/rule-policy.ts';
 import { AccordionCard, Card, Tag, type Tone } from '../base/index.tsx';
-
-const statuses: Record<RuleResult['status'], { label: string; tone: Tone }> = {
-  triggered: { label: '已命中', tone: 'red' },
-  not_triggered: { label: '未命中', tone: 'green' },
-  insufficient_data: { label: '信息不足', tone: 'amber' },
-  not_applicable: { label: '不适用', tone: 'neutral' },
-};
-const levels: Record<RuleResult['level'], { label: string; tone: Tone }> = {
-  red: { label: '高关注', tone: 'red' }, yellow: { label: '需核实', tone: 'amber' }, blue: { label: '提示', tone: 'blue' },
-};
 
 export function RuleList({ report }: { report: AuditReport }) {
   return (
@@ -23,14 +14,12 @@ export function RuleList({ report }: { report: AuditReport }) {
 
 function RuleItem({ rule, report }: { rule: RuleResult; report: AuditReport }) {
   const [open, setOpen] = useState(rule.status === 'triggered');
-  const level = levels[rule.level];
-  const status = statuses[rule.status];
-  const statusTone = rule.status === 'triggered' ? level.tone : status.tone;
+  const presentation = rulePresentation(rule);
   const evidence = [...new Map(report.evidence.filter((item) => rule.evidence_ids.includes(item.id)).map(item => [JSON.stringify([item.document_id,item.page,item.quote]),item])).values()];
   return (
-    <AccordionCard title={<span id={`rule-${rule.rule_id}`} className="flex flex-wrap items-center gap-2"><Tag tone={statusTone}>{status.label}</Tag><span>{rule.rule_id} {rule.title}</span></span>} open={open} onToggle={() => setOpen(!open)} dense>
+    <AccordionCard title={<span id={`rule-${rule.rule_id}`} className="flex flex-wrap items-center gap-2"><Tag tone={presentation.tone as Tone}>{presentation.label}</Tag><Tag tone="neutral">{presentation.natureLabel}</Tag><span>{rule.rule_id} {rule.title}</span></span>} open={open} onToggle={() => setOpen(!open)} dense>
       <div className="flex flex-col gap-4">
-        <div className="flex flex-wrap gap-2"><Tag tone={statusTone}>{status.label}</Tag>{rule.status === 'triggered' && <Tag tone={level.tone}>{level.label}</Tag>}<span className="self-center text-xs text-mute">规则 {rule.rule_id}</span></div>
+        <div className="flex flex-wrap gap-2"><Tag tone={presentation.tone as Tone}>{presentation.label}</Tag>{presentation.levelLabel && presentation.levelLabel !== presentation.natureLabel ? <Tag tone={presentation.tone as Tone}>{presentation.levelLabel}</Tag> : null}<Tag tone="neutral">{presentation.natureLabel}</Tag><span className="self-center text-xs text-mute">{presentation.factLabel} · 规则 {rule.rule_id}</span></div>
         <p className="whitespace-pre-wrap text-sm leading-relaxed">{rule.reason}</p>
         {rule.action ? <Card inset tone="blue"><p className="text-sm"><span className="font-medium">可以核实：</span>{rule.action}</p></Card> : null}
         {rule.citation ? (

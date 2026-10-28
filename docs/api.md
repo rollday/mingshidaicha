@@ -98,6 +98,12 @@ PDF worker 可选 `stream_progress:true` 时按 NDJSON 发送 `{progress:{stage:
 
 ## 显示规则
 
+规则性质、必要条件和完整分级表见 [rules.md](rules.md)。本次策略为 `2026-10-28.v1`。每项规则新增 `nature`（`prohibited/disclosure/advisory`）、`default_level`、`fact_state`（`sufficient/insufficient/not_applicable`）、`risk_level` 和 `grading_policy`。`level` 依据性质与本次四态结果动态计算；`default_level` 不能当本次结论。为兼容既有字段，未命中/不适用的 `level` 为 blue，前端仍须按状态显示绿/中性。
+
+报告新增顶层 `grading_policy`、`conclusion.counts`（`confirmed_issues/pending_checks/advisory_hints/not_triggered/not_applicable`）与 `conclusion.information_incomplete`。总评颜色只汇总确定命中的禁止性/披露核查，信息不足和阅读提示单独计数；总评 blue 不表示已核验安全或合规。`partial` 仍只表示本次不能核算。实时预览与最终报告统一调用共享的 `rulePresentation`，不得将所有 triggered 都画红，也不得把所有 unknown 都画黄。
+
+`fact_state=sufficient` 只表示当前确认输入足以判定对应规则，不能当作外部事实已获官方证实。特别是 R07 的 `licensed=false` 只能来自明确的确认输入，搜索无结果不得自动写入该值。
+
 - 金额和利率都是十进制字符串，`"0.12"` 表示 12%。显示用 `lib/format.ts`，不要先 `Number()`。
 - 披露年化对应 `facts.disclosure.quoted_apr`；同口径重算值对应 `calculation.calculation.comparison.computed_apr`，口径用 `comparison.method`。`nominal_apr` 是名义年化，不能标为单利。
 - `gap_pp` 已经是百分点，不能再乘 100；`null` 表示不能比对，不能显示成零。

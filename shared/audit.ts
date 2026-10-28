@@ -5,6 +5,7 @@ import type { CaseWorkflow } from '../src/cases.ts';
 import type { samples } from '../src/samples.ts';
 import type {Activity,ReportDraft} from './progress.ts';
 export type {Activity,ReportDraft,DraftSection} from './progress.ts';
+export type {RuleNature,RuleStatus,RuleLevel,RuleFactState} from './rule-policy.ts';
 export type { CaseFacts, Evidence, LoanResult, RuleResult, SourceMaterial } from '../src/domain.ts';
 export type { AuditReport, Correction } from '../src/report.ts';
 export type { LenderSearchResult, LenderSearchCategory, LenderSearchSource } from '../src/lender-search.ts';

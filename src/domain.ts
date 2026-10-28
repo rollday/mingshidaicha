@@ -52,9 +52,9 @@ export const caseExtractionSchema = z.object({
 }).strict();
 export type CaseExtraction = z.infer<typeof caseExtractionSchema>;
 export type SourceMaterial = { id: string; role: 'disclosure' | 'contract' | 'schedule' | 'other'; pages: { page: number; text: string }[]; vision?: boolean };
-export type RuleResult = {
+export type RuleResult = ReturnType<typeof import('../shared/rule-policy.ts').gradeRule> & {
   rule_id: string; title: string; status: 'triggered' | 'not_triggered' | 'insufficient_data' | 'not_applicable';
-  level: 'red' | 'yellow' | 'blue'; reason: string; action: string;
+  reason: string; action: string;
   citation: { document: string; article: string; quote: string; url: string; effective_date: string; verification: 'official_checked' | 'local_material_only' } | null;
   evidence_ids: string[];
 };

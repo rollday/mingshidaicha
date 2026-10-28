@@ -1,12 +1,14 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import type { CaseFacts, Evidence, LoanResult, RuleResult } from './domain.ts';
+import {defaultRuleLevel,gradeRule,type RuleNature} from '../shared/rule-policy.ts';
 
 type Citation = NonNullable<RuleResult['citation']>;
 type RuleDefinition = {
   id: string;
   title: string;
-  level: RuleResult['level'];
+  nature:RuleNature;
+  default_level:RuleResult['default_level'];
   effective_date: string | null;
   citation: Citation | null;
 };
@@ -15,6 +17,9 @@ const regulationData = JSON.parse(
   readFileSync(resolve('data/regulations.json'), 'utf8'),
 ) as { rules: RuleDefinition[] };
 const rules = new Map(regulationData.rules.map((rule) => [rule.id, rule]));
+for(const rule of rules.values()){
+  if(!['prohibited','disclosure','advisory'].includes(rule.nature) || rule.default_level!==defaultRuleLevel(rule.nature))throw new Error(`Invalid rule grading metadata: ${rule.id}`);
+}
 
 function evidenceIds(evidence: Evidence[], fields: string[]): string[] {
   const wanted = fields.map((field) => field.toLowerCase());
@@ -37,7 +42,7 @@ function result(
     rule_id: id,
     title: definition.title,
     status,
-    level: definition.level,
+    ...gradeRule(definition.nature,status),
     reason,
     action,
     citation: definition.citation,
@@ -95,7 +100,11 @@ export function evaluateRules(
 
   const output: RuleResult[] = [];
   const push = (id: string, status: RuleResult['status'], reason: string, action: string, fields = disclosureFields) => {
-    output.push(temporal.get(id) ?? result(id, status, reason, action, evidenceIds(evidence, fields)));
+    const dated=temporal.get(id);
+    // A known false constituent cannot become a suspected issue merely because
+    // another (irrelevant) input, such as the start date, remains unknown.
+    const decisive=status==='not_applicable' || status==='not_triggered'&&dated?.status!=='not_applicable';
+    output.push(!decisive&&dated ? dated : result(id,status,reason,action,evidenceIds(evidence,fields)));
   };
 
   push('R01', facts.disclosure.present === false || facts.disclosure.items_complete === false
@@ -178,11 +187,11 @@ export function evaluateRules(
     '核实放贷主体、在校身份及贷款产品属性；该提示不替代个案法律判断。', ['学生', 'student', '放贷', '贷款', 'lender']);
 
   push('R07', facts.borrower.is_student === false ? 'not_applicable' : facts.borrower.is_student === null ? 'insufficient_data' : facts.lender.licensed === false ? 'triggered' : facts.lender.licensed === true ? 'not_triggered' : 'insufficient_data',
-    facts.lender.licensed === false
-    ? '输入事实将主体资质标记为 false；须核实借款人身份和主体资质，不代表已联网查询牌照或作出违法结论。'
+    facts.borrower.is_student===false?'已确认借款人不是在校学生，不套用本条针对大学生信贷服务的资质核查。':facts.borrower.is_student===null?'借款人是否为在校学生未知，无法判断本条资质核查的适用性。':facts.lender.licensed === false
+    ? '用户确认的信息将主体资质标记为否，命中本项核查条件；本系统未据此完成官方资质核验或作出违法结论。'
       : facts.lender.licensed === true
-        ? '输入事实将主体资质标记为 true；本规则不进行牌照联网核验。'
-        : '主体资质未知；不能视为已具备资质，也不能据此断言无资质。',
+        ? '用户确认的信息将主体资质标记为是；本系统未进行牌照联网核验。'
+        : '主体资质未知；未查到公开信息不能等同于未获批准，不据此认定存在资质问题。',
     '通过监管部门官方渠道核验主体名称、业务范围及适用许可。', ['资质', 'licensed', '放贷', 'lender']);
 
   const purpose = facts.borrower.purpose.toLowerCase();

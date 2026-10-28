@@ -3,7 +3,6 @@
     {
       "id": "R01",
       "title": "明示信息缺项",
-      "level": "red",
       "effective_date": "2026-08-01",
       "citation": {
         "document": "个人贷款业务明示综合融资成本规定",
@@ -12,12 +11,13 @@
         "url": "https://www.nfra.gov.cn/chinese/OFFICE/PDF/1251479.pdf",
         "effective_date": "2026-08-01",
         "verification": "official_checked"
-      }
+      },
+      "nature": "disclosure",
+      "default_level": "yellow"
     },
     {
       "id": "R02",
       "title": "自算与标注差异",
-      "level": "yellow",
       "effective_date": "2026-08-01",
       "citation": {
         "document": "个人贷款业务明示综合融资成本规定",
@@ -26,12 +26,13 @@
         "url": "https://www.nfra.gov.cn/chinese/OFFICE/PDF/1251479.pdf",
         "effective_date": "2026-08-01",
         "verification": "official_checked"
-      }
+      },
+      "nature": "disclosure",
+      "default_level": "yellow"
     },
     {
       "id": "R03",
       "title": "正常履约费用未明示",
-      "level": "red",
       "effective_date": "2026-08-01",
       "citation": {
         "document": "个人贷款业务明示综合融资成本规定",
@@ -40,12 +41,13 @@
         "url": "https://www.nfra.gov.cn/chinese/OFFICE/PDF/1251479.pdf",
         "effective_date": "2026-08-01",
         "verification": "official_checked"
-      }
+      },
+      "nature": "prohibited",
+      "default_level": "red"
     },
     {
       "id": "R04",
       "title": "增信正常费用未计入",
-      "level": "red",
       "effective_date": "2026-08-01",
       "citation": {
         "document": "个人贷款业务明示综合融资成本规定",
@@ -54,12 +56,13 @@
         "url": "https://www.nfra.gov.cn/chinese/OFFICE/PDF/1251479.pdf",
         "effective_date": "2026-08-01",
         "verification": "official_checked"
-      }
+      },
+      "nature": "disclosure",
+      "default_level": "yellow"
     },
     {
       "id": "R05",
       "title": "助贷平台直接收费待核实",
-      "level": "yellow",
       "effective_date": "2025-10-01",
       "citation": {
         "document": "金融监管总局关于加强商业银行互联网助贷业务管理提升金融服务质效的通知",
@@ -68,12 +71,13 @@
         "url": "https://www.nfra.gov.cn/chinese/OFFICE/PDF/1203545.pdf",
         "effective_date": "2025-10-01",
         "verification": "official_checked"
-      }
+      },
+      "nature": "prohibited",
+      "default_level": "red"
     },
     {
       "id": "R06",
       "title": "大学生小额贷款组合条件",
-      "level": "red",
       "effective_date": "2021-02-24",
       "citation": {
         "document": "关于进一步规范大学生互联网消费贷款监督管理工作的通知",
@@ -82,12 +86,13 @@
         "url": "https://www.gov.cn/zhengce/zhengceku/2021-03/17/content_5593569.htm",
         "effective_date": "2021-02-24",
         "verification": "official_checked"
-      }
+      },
+      "nature": "prohibited",
+      "default_level": "red"
     },
     {
       "id": "R07",
       "title": "主体资质核验提示",
-      "level": "yellow",
       "effective_date": "2021-02-24",
       "citation": {
         "document": "关于进一步规范大学生互联网消费贷款监督管理工作的通知",
@@ -96,12 +101,13 @@
         "url": "https://www.gov.cn/zhengce/zhengceku/2021-03/17/content_5593569.htm",
         "effective_date": "2021-02-24",
         "verification": "official_checked"
-      }
+      },
+      "nature": "prohibited",
+      "default_level": "red"
     },
     {
       "id": "R08",
       "title": "特定用途与资金直付提示",
-      "level": "yellow",
       "effective_date": null,
       "citation": {
         "document": "未找到可核验的对应官方条文",
@@ -110,12 +116,13 @@
         "url": "",
         "effective_date": "",
         "verification": "local_material_only"
-      }
+      },
+      "nature": "advisory",
+      "default_level": "blue"
     },
     {
       "id": "R09",
       "title": "营销话术人工核验提示",
-      "level": "blue",
       "effective_date": null,
       "citation": {
         "document": "未找到可核验的对应官方条文",
@@ -124,12 +131,13 @@
         "url": "",
         "effective_date": "",
         "verification": "local_material_only"
-      }
+      },
+      "nature": "advisory",
+      "default_level": "blue"
     },
     {
       "id": "R10",
       "title": "或有成本披露缺失",
-      "level": "yellow",
       "effective_date": "2026-08-01",
       "citation": {
         "document": "个人贷款业务明示综合融资成本规定",
@@ -138,7 +146,9 @@
         "url": "https://www.nfra.gov.cn/chinese/OFFICE/PDF/1251479.pdf",
         "effective_date": "2026-08-01",
         "verification": "official_checked"
-      }
+      },
+      "nature": "disclosure",
+      "default_level": "yellow"
     }
   ]
 }

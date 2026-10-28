@@ -92,7 +92,11 @@ function renderReport(report) {
   latestReport = report; $('report-section').hidden = false; $('retry').hidden = report.generation.mode === 'ai'; active('report');
   $('report-mode').textContent = report.generation.mode === 'ai' ? 'AI 撰写 · 已通过数字与引用校验' : '模板报告 · AI 生成未完成';
   const root = $('report'); root.replaceChildren();
-  const summary = node('div', undefined, 'report-card ' + report.conclusion.level); summary.append(node('p', report.narrative.summary)); root.append(summary);
+  const summary = node('div', undefined, 'report-card ' + report.conclusion.level); summary.append(node('p', report.narrative.summary));
+  const counts=report.conclusion.counts;
+  if(counts)summary.append(node('p',`已确认核查项 ${counts.confirmed_issues}；待核实 ${counts.pending_checks}；阅读提示 ${counts.advisory_hints}。`,'small'));
+  if(report.conclusion.information_incomplete)summary.append(node('p','部分必要信息尚未补齐；待核实项不计入已确认问题。','small muted'));
+  root.append(summary);
   if (report.calculation) {
     const calc = report.calculation.calculation, metrics = node('div', undefined, 'metrics');
     const chosen = calc.comparison.computed_apr;
@@ -107,7 +111,7 @@ function renderReport(report) {
   root.append(node('h3','检查结果与原文依据'));
   const statusNames = { triggered:'发现需关注事项', insufficient_data:'信息不足', not_triggered:'本项未发现明确问题', not_applicable:'本项不适用' };
   for (const rule of report.rules) {
-    const details = node('details',undefined,'report-card ' + (rule.status === 'triggered' ? rule.level : rule.status === 'insufficient_data' ? 'yellow' : 'blue'));
+    const details = node('details',undefined,'report-card ' + (['triggered','insufficient_data'].includes(rule.status) ? rule.level : 'blue'));
     details.append(node('summary',`${rule.rule_id} ${rule.title} · ${statusNames[rule.status]}`));
     details.append(node('p',report.narrative.findings.find(f=>f.rule_id===rule.rule_id)?.explanation || rule.reason));
     if(rule.citation?.verification === 'official_checked') { details.append(node('blockquote',rule.citation.quote)); const link=node('a',rule.citation.document+' '+rule.citation.article); link.href=rule.citation.url; link.target='_blank'; link.rel='noopener noreferrer'; details.append(link); } else details.append(node('p','项目提示项，未绑定可核验的对应官方条文。','small muted'));
