@@ -11,13 +11,32 @@ import { ModelClient } from './model.ts';
 import { runPython } from './python.ts';
 import { CaseWorkflow } from './cases.ts';
 import { samples } from './samples.ts';
+import { rulePresentation } from '../shared/rule-policy.ts';
+import type { AuditReport } from './report.ts';
+import { reportExportSnapshotMatches } from './report-export.ts';
 
 type Session = {
   id: string; token: string; expires: number; sockets: Set<WebSocket>;
   documents: Map<string, { path: string; mime: string }>; workflow: CaseWorkflow;
-  requests: Set<string>; task?: { id: string; abort: AbortController };
+  requests: Set<string>; pdfExports: Set<AbortController>; task?: { id: string; abort: AbortController };
 };
 const SESSION_TTL = 15 * 60 * 1000;
+const REPORT_LEVEL_LABELS: Record<AuditReport['conclusion']['level'], string> = {
+  red: '重点关注', yellow: '披露需核对', blue: '当前无已确认问题',
+};
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+
+function pdfExportRequest(value: unknown): { case_id: string; expected_revision: number } {
+  if (!isRecord(value) || typeof value.case_id !== 'string' ||
+      !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value.case_id) ||
+      typeof value.expected_revision !== 'number' || !Number.isSafeInteger(value.expected_revision) || value.expected_revision < 0) {
+    throw new AppError('INVALID_REPORT_REQUEST', '案件编号或版本号格式不正确。', 422);
+  }
+  return { case_id: value.case_id, expected_revision: value.expected_revision };
+}
 
 export async function createBackend(settings: Config = config) {
   const directory = await mkdtemp(join(tmpdir(), 'mingshidaicha-'));
@@ -37,6 +56,8 @@ export async function createBackend(settings: Config = config) {
   async function dispose(session: Session) {
     sessions.delete(session.token);
     session.task?.abort.abort();
+    for (const controller of session.pdfExports) controller.abort();
+    session.pdfExports.clear();
     for (const ws of session.sockets) ws.close(1000, 'Session ended');
     await Promise.all([...session.documents.values()].map(file => rm(file.path, { force: true })));
     session.workflow.records.clear();
@@ -60,12 +81,12 @@ export async function createBackend(settings: Config = config) {
     res.writeHead(status, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store', 'x-content-type-options': 'nosniff' });
     res.end(JSON.stringify(data));
   }
-  async function readBody(req: IncomingMessage) {
+  async function readBody(req: IncomingMessage, maxBytes = settings.maxUpload, tooLargeCode = 'FILE_TOO_LARGE', tooLargeMessage = '文件超过大小限制。') {
     const chunks: Buffer[] = []; let size = 0;
     for await (const part of req) {
       const chunk = Buffer.isBuffer(part) ? part : Buffer.from(part);
       size += chunk.length;
-      if (size > settings.maxUpload) throw new AppError('FILE_TOO_LARGE', '文件超过大小限制。', 413);
+      if (size > maxBytes) throw new AppError(tooLargeCode, tooLargeMessage, 413);
       chunks.push(chunk);
     }
     return Buffer.concat(chunks);
@@ -108,12 +129,68 @@ export async function createBackend(settings: Config = config) {
       }
       if (req.method === 'POST' && pathname === '/api/sessions') {
         if (sessions.size >= 100) throw new AppError('SESSION_LIMIT', '会话数已达上限。', 429);
-        const session: Session = { id: randomUUID(), token: randomBytes(32).toString('base64url'), expires: Date.now() + SESSION_TTL, sockets: new Set(), documents: new Map(), requests: new Set(), workflow: new CaseWorkflow(settings) };
+        const session: Session = { id: randomUUID(), token: randomBytes(32).toString('base64url'), expires: Date.now() + SESSION_TTL, sockets: new Set(), documents: new Map(), requests: new Set(), pdfExports: new Set(), workflow: new CaseWorkflow(settings) };
         sessions.set(session.token, session);
         return json(res, 201, { session_id: session.id, session_token: session.token, websocket_path: '/ws', expires_in_seconds: SESSION_TTL / 1000 });
       }
       if (req.method === 'DELETE' && pathname === '/api/sessions/current') {
         await dispose(httpSession(req)); return json(res, 200, { deleted: true });
+      }
+      if (req.method === 'POST' && pathname === '/api/reports/pdf') {
+        const session = httpSession(req);
+        const mime = req.headers['content-type']?.split(';')[0]?.trim() ?? '';
+        if (mime !== 'application/json') throw new AppError('UNSUPPORTED_MEDIA', '报告 PDF 导出需要案件编号和版本号。', 415);
+        const maxRequestBytes = 4 * 1024;
+        if (Number(req.headers['content-length'] ?? 0) > maxRequestBytes) {
+          throw new AppError('REPORT_REQUEST_TOO_LARGE', '报告导出请求不能超过 4 KiB。', 413);
+        }
+        const body = await readBody(req, maxRequestBytes, 'REPORT_REQUEST_TOO_LARGE', '报告导出请求不能超过 4 KiB。');
+        let request: unknown;
+        try { request = JSON.parse(body.toString('utf8')); }
+        catch { throw new AppError('INVALID_JSON', '导出请求不是有效 JSON。', 400); }
+        const { case_id, expected_revision } = pdfExportRequest(request);
+        const record = session.workflow.get(case_id);
+        if (record.revision !== expected_revision) throw new AppError('REVISION_CONFLICT', '案件已更新，请刷新报告后重新下载。', 409);
+        if (record.status !== 'completed' || !record.report) throw new AppError('REPORT_NOT_READY', '案件报告尚未完成，暂时无法导出。', 409);
+        const report = record.report;
+        const snapshot = { record, revision: record.revision, report, reportJson: JSON.stringify(report) ?? '' };
+        const payload = {
+          report,
+          conclusion_label: REPORT_LEVEL_LABELS[report.conclusion.level],
+          rule_presentations: report.rules.map(rule => ({ rule_id: rule.rule_id, ...rulePresentation(rule) })),
+        };
+        if (rendering >= 2) throw new AppError('PDF_BUSY', '文档处理繁忙，请稍后重试。', 429);
+        const abort = new AbortController();
+        session.pdfExports.add(abort);
+        const disconnect = () => { if (!res.writableEnded) abort.abort(); };
+        res.on('close', disconnect); rendering++;
+        try {
+          const generated = await runPython(settings, 'generate_report_pdf', payload, abort.signal);
+          if (!sessions.has(session.token)) throw new AppError('UNAUTHORIZED', '会话已结束。', 401);
+          const currentRecord = session.workflow.get(case_id);
+          if (!reportExportSnapshotMatches(snapshot, currentRecord)) {
+            throw new AppError('REVISION_CONFLICT', '案件在 PDF 生成期间已更新，请刷新报告后重新下载。', 409);
+          }
+          const encoded = isRecord(generated) ? generated.pdf_base64 : undefined;
+          if (typeof encoded !== 'string' || encoded.length > 24 * 1024 * 1024 || encoded.length % 4 !== 0 || !/^[A-Za-z0-9+/]*={0,2}$/.test(encoded)) {
+            throw new AppError('PDF_GENERATION_FAILED', '无法生成报告 PDF。', 502);
+          }
+          const pdf = Buffer.from(encoded, 'base64');
+          if (!pdf.subarray(0, 5).equals(Buffer.from('%PDF-')) || pdf.length > 20 * 1024 * 1024) {
+            throw new AppError('PDF_GENERATION_FAILED', '生成的报告文件格式无效。', 502);
+          }
+          if (!res.destroyed) {
+            res.writeHead(200, {
+              'content-type': 'application/pdf',
+              'content-disposition': 'attachment; filename="loan-audit-report.pdf"',
+              'content-length': pdf.length,
+              'cache-control': 'no-store',
+              'x-content-type-options': 'nosniff',
+            });
+            res.end(pdf);
+          }
+        } finally { rendering--; session.pdfExports.delete(abort); res.off('close', disconnect); }
+        return;
       }
       if (req.method === 'POST' && pathname === '/api/documents') {
         const session = httpSession(req);

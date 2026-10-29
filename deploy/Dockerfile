@@ -1,8 +1,9 @@
 FROM node:24-bookworm-slim
 
 WORKDIR /app
-RUN apt-get update && apt-get install -y --no-install-recommends python3 python3-venv \
+RUN apt-get update && apt-get install -y --no-install-recommends python3 python3-venv fonts-arphic-uming \
     && rm -rf /var/lib/apt/lists/* \
+    && test -r /usr/share/fonts/truetype/arphic/uming.ttc \
     && python3 -m venv /opt/venv
 COPY python/requirements.txt /tmp/requirements.txt
 RUN /opt/venv/bin/pip install --no-cache-dir -r /tmp/requirements.txt

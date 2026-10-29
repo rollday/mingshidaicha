@@ -59,7 +59,7 @@ export type RuleResult = ReturnType<typeof import('../shared/rule-policy.ts').gr
   evidence_ids: string[];
 };
 export type LoanResult = {
-  input: unknown; calculation: { cashflows: unknown[]; nominal_apr: string | null; effective_apr: string | null; simple_apr: string | null; xirr_apr: string | null; comparison: { method: string; quoted_apr: string | null; computed_apr: string | null; gap_pp: string | null; exceeds_tolerance: boolean | null } };
+  input: unknown; calculation: { cashflows: unknown[]; nominal_apr: string | null; effective_apr: string | null; simple_apr: string | null; xirr_apr: string | null; comparison: { method: string; method_basis?: 'explicit' | 'assumed_simple' | 'unavailable'; disclosed_method?: string; method_label?: string; quoted_apr: string | null; computed_apr: string | null; gap_pp: string | null; exceeds_tolerance: boolean | null } };
   summary: { principal: string; disbursed: string; total_repayment: string; total_additional_fees: string; total_cost: string };
   fee_totals: { id: string; name: string; total: string; contingent: boolean }[];
 };

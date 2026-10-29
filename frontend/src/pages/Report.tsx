@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import type { AuditReport } from '../types/audit.ts';
 import { Button } from '../components/base/index.tsx';
 import { ActionList } from '../components/report/ActionList.tsx';
@@ -19,6 +20,7 @@ export default function Report({
   onSearch,
   onCancel,
   onReadOfficial,
+  onDownloadPdf,
 }: {
   report: AuditReport;
   onBack: () => void;
@@ -29,7 +31,34 @@ export default function Report({
   onSearch:(name:string)=>void;
   onCancel:()=>void;
   onReadOfficial:(url:string)=>void;
+  onDownloadPdf:()=>Promise<Blob>;
 }) {
+  const [downloadingPdf, setDownloadingPdf] = useState(false);
+  const [pdfError, setPdfError] = useState('');
+  const downloadPdf = async () => {
+    if (downloadingPdf) return;
+    setDownloadingPdf(true);
+    setPdfError('');
+    try {
+      const blob = await onDownloadPdf();
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      const date = report.generated_at.slice(0, 10).replace(/[^0-9-]/g, '') || 'report';
+      link.href = url;
+      link.download = `loan-audit-report-${date}.pdf`;
+      document.body.append(link);
+      link.click();
+      link.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    } catch (error) {
+      const message = error && typeof error === 'object' && 'message' in error && typeof error.message === 'string'
+        ? error.message
+        : 'PDF 报告生成失败，请稍后重试。';
+      setPdfError(message);
+    } finally {
+      setDownloadingPdf(false);
+    }
+  };
   return (
     <section className="flex flex-col gap-8 animate-rise">
       <header className="flex flex-col gap-5 border-b border-line pb-6 sm:flex-row sm:items-end sm:justify-between">
@@ -50,13 +79,12 @@ export default function Report({
         <div className="flex flex-col gap-3 sm:flex-row">
           <Button variant="secondary" onClick={onRetry} disabled={busy}>{busy ? (stage==='read_official_source'?'正在读取官方详情…':stage.startsWith('search_') ? '正在检索公开来源…' : '正在生成报告…') : '重新生成报告'}</Button>
           {busy && <Button onClick={onCancel}>取消任务</Button>}
-          <Button variant="secondary" disabled={busy} onClick={() => {
-            const url = URL.createObjectURL(new Blob([JSON.stringify(report, null, 2)], { type: 'application/json' }));
-            const link = document.createElement('a'); link.href = url; link.download = 'loan-audit-report.json'; link.click(); setTimeout(() => URL.revokeObjectURL(url), 1000);
-          }}>下载报告数据</Button>
+          <Button variant="secondary" disabled={busy || downloadingPdf} onClick={() => void downloadPdf()}>{downloadingPdf ? '正在生成 PDF…' : '下载 PDF 报告'}</Button>
           <Button variant="primary" disabled={busy} onClick={onReset}>新建核查</Button>
         </div>
       </header>
+
+      {pdfError ? <p className="-mt-5 text-sm text-red" role="alert">{pdfError}</p> : null}
 
       <div className="flex flex-col gap-8">
         <VerdictCard report={report} />

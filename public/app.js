@@ -100,7 +100,8 @@ function renderReport(report) {
   if (report.calculation) {
     const calc = report.calculation.calculation, metrics = node('div', undefined, 'metrics');
     const chosen = calc.comparison.computed_apr;
-    for (const [label, value] of [['与披露口径一致的重算年化', chosen === null ? '口径待确认' : decimalText(chosen, 2) + '%'], ['正常履约总成本', decimalText(report.calculation.summary.total_cost) + '元'], ['额外独立支付费用', decimalText(report.calculation.summary.total_additional_fees) + '元']]) { const box = node('div', undefined, 'metric'); box.append(node('span', label), node('strong', value)); metrics.append(box); }
+    const comparisonLabel = calc.comparison.method_basis === 'assumed_simple' ? '重算年化（按单利推定）' : '重算年化';
+    for (const [label, value] of [[comparisonLabel, chosen === null ? '口径待确认' : decimalText(chosen, 2) + '%'], ['正常履约总成本', decimalText(report.calculation.summary.total_cost) + '元'], ['额外独立支付费用', decimalText(report.calculation.summary.total_additional_fees) + '元']]) { const box = node('div', undefined, 'metric'); box.append(node('span', label), node('strong', value)); metrics.append(box); }
     root.append(metrics);
     const detail = node('p', undefined, 'small muted'); detail.textContent = [['名义年化',calc.nominal_apr],['复利年化',calc.effective_apr],['到期单利',calc.simple_apr],['按实际日期年化',calc.xirr_apr]].filter(([,v]) => v !== null).map(([label,v]) => label + ' ' + decimalText(v,2) + '%').join('；'); root.append(detail);
   } else root.append(node('p', '材料不足或存在冲突，本次报告未给出可用的成本计算值。', 'questions'));

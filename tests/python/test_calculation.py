@@ -67,20 +67,75 @@ class CalculationTests(unittest.TestCase):
         self.assertEqual(result["cashflows"][0]["amount"], "1000")
         self.assertRate(result["nominal_apr"], 10.0)
 
-    def test_unknown_quoted_method_does_not_compare(self):
-        result = calculate(periodic("1000", ["1100"], quoted_apr="0.10"))
-        self.assertEqual(result["comparison"]["quoted_apr"], "0.10")
-        self.assertIsNone(result["comparison"]["computed_apr"])
-        self.assertIsNone(result["comparison"]["gap_pp"])
-        self.assertIsNone(result["comparison"]["exceeds_tolerance"])
+    def test_unknown_method_assumes_simple_only_when_available(self):
+        result = calculate(periodic("1000", ["1100"], periods_per_year=1, quoted_apr="0.10"))
+        comparison = result["comparison"]
+        self.assertEqual(comparison["method"], "simple")
+        self.assertEqual(comparison["method_basis"], "assumed_simple")
+        self.assertEqual(comparison["disclosed_method"], "unknown")
+        self.assertEqual(comparison["method_label"], "按单利推定")
+        self.assertEqual(comparison["computed_apr"], result["simple_apr"])
+        self.assertEqual(comparison["gap_pp"], "0")
+
+        no_quote = calculate(periodic("1000", ["1100"], periods_per_year=1))["comparison"]
+        self.assertIsNone(no_quote["quoted_apr"])
+        self.assertEqual(no_quote["method_basis"], "assumed_simple")
+        self.assertIsNotNone(no_quote["computed_apr"])
+        self.assertIsNone(no_quote["gap_pp"])
+        self.assertIsNone(no_quote["exceeds_tolerance"])
+
+        multi_period = calculate(periodic("1000", ["500", "600"], quoted_apr="0.10"))
+        self.assertIsNone(multi_period["simple_apr"])
+        self.assertEqual(multi_period["comparison"]["method"], "simple")
+        self.assertEqual(multi_period["comparison"]["method_basis"], "unavailable")
+        self.assertEqual(multi_period["comparison"]["disclosed_method"], "unknown")
+        self.assertEqual(multi_period["comparison"]["method_label"], "待确认")
+        self.assertIsNone(multi_period["comparison"]["computed_apr"])
+        self.assertIsNone(multi_period["comparison"]["gap_pp"])
 
     def test_comparison_uses_unrounded_values_and_strict_tolerance(self):
         result = calculate(periodic(
             "1000", ["1100"], periods_per_year=1,
             quoted_apr="0.095", quoted_method="simple", comparison_tolerance_pp="0.5",
         ))
+        self.assertEqual(result["comparison"]["method"], "simple")
+        self.assertEqual(result["comparison"]["method_basis"], "explicit")
+        self.assertEqual(result["comparison"]["disclosed_method"], "simple")
         self.assertEqual(Decimal(result["comparison"]["gap_pp"]), Decimal("0.5"))
         self.assertFalse(result["comparison"]["exceeds_tolerance"])
+
+    def test_explicit_effective_method_remains_effective(self):
+        result = calculate(periodic(
+            "1000", ["1100"], periods_per_year=2,
+            quoted_apr="0.21", quoted_method="effective",
+        ))
+        comparison = result["comparison"]
+        self.assertEqual(comparison["method"], "effective")
+        self.assertEqual(comparison["method_basis"], "explicit")
+        self.assertEqual(comparison["disclosed_method"], "effective")
+        self.assertEqual(comparison["computed_apr"], result["effective_apr"])
+
+    def test_unknown_dated_cashflows_do_not_invent_simple_day_count(self):
+        request = {
+            "timing": "dated",
+            "disbursements": [{"amount": "1000", "date": "2024-01-01"}],
+            "repayments": [{"amount": "1080", "date": "2024-12-31"}],
+            "quoted_apr": "0.08",
+        }
+        result = calculate(request)
+        self.assertIsNone(result["simple_apr"])
+        self.assertIsNotNone(result["xirr_apr"])
+        self.assertEqual(result["comparison"]["method"], "simple")
+        self.assertEqual(result["comparison"]["method_basis"], "unavailable")
+        self.assertEqual(result["comparison"]["disclosed_method"], "unknown")
+        self.assertEqual(result["comparison"]["method_label"], "待确认")
+        self.assertIsNone(result["comparison"]["computed_apr"])
+        self.assertIsNone(result["comparison"]["gap_pp"])
+
+        explicit_simple = calculate({**request, "quoted_method": "simple"})["comparison"]
+        self.assertEqual(explicit_simple["method"], "simple")
+        self.assertEqual(explicit_simple["method_basis"], "explicit")
+        self.assertIsNone(explicit_simple["computed_apr"])
 
     def test_dated_xirr_uses_act_365(self):
         request = {
@@ -92,6 +147,8 @@ class CalculationTests(unittest.TestCase):
         result = calculate(request)
         self.assertRate(result["xirr_apr"], 8.0, places=5)
         self.assertIsNone(result["nominal_apr"])
+        self.assertEqual(result["comparison"]["method_basis"], "explicit")
+        self.assertEqual(result["comparison"]["disclosed_method"], "xirr")
         self.assertEqual(result["comparison"]["computed_apr"], result["xirr_apr"])
 
     def test_future_positive_disbursement_is_rejected(self):
@@ -129,6 +186,8 @@ class CalculationTests(unittest.TestCase):
 
     def test_periodic_data_does_not_claim_xirr(self):
         result = calculate(periodic("100", ["110"], quoted_method="xirr", quoted_apr="0.1"))
+        self.assertEqual(result["comparison"]["method"], "xirr")
+        self.assertEqual(result["comparison"]["method_basis"], "explicit")
         self.assertIsNone(result["comparison"]["computed_apr"])
 
     def test_nominal_threshold_ignores_only_solver_uncertainty(self):
@@ -137,6 +196,8 @@ class CalculationTests(unittest.TestCase):
                 quoted = str((Decimal(payment) / Decimal("1000") - 1) - Decimal("0.005"))
                 result = calculate(periodic("1000", [payment], periods_per_year=1,
                                             quoted_method="nominal", quoted_apr=quoted))
+                self.assertEqual(result["comparison"]["method"], "nominal")
+                self.assertEqual(result["comparison"]["method_basis"], "explicit")
                 self.assertFalse(result["comparison"]["exceeds_tolerance"])
 
     def test_large_amounts_keep_small_fees_in_cashflows(self):

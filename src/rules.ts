@@ -80,7 +80,7 @@ const marketingPatterns = [
   /零利息|无利息|免利息|零息|免息|无息/,
   /百分之百通过|100\s*%\s*通过|包过|必过/,
   /不查征信|不看征信|无视征信/,
-  /无门槛|零门槛|秒到账|秒批/,
+  /无门槛|零门槛/,
 ];
 
 export function evaluateRules(
@@ -119,11 +119,17 @@ export function evaluateRules(
       : '明示表是否存在或项目是否完整未知，不能据此视为合规。',
   '核对明示表是否列明本金、各息费项目、收取方式、标准、主体及年化综合成本。');
 
-  const comparison = resultValue?.calculation.comparison.exceeds_tolerance;
-  push('R02', comparison === true ? 'triggered' : comparison === false ? 'not_triggered' : 'insufficient_data',
-    comparison === true
+  const comparison = resultValue?.calculation.comparison;
+  const assumed = comparison?.method_basis === 'assumed_simple';
+  push('R02', assumed ? 'insufficient_data' : comparison?.exceeds_tolerance === true ? 'triggered' : comparison?.exceeds_tolerance === false ? 'not_triggered' : 'insufficient_data',
+    assumed && comparison?.exceeds_tolerance === true
+      ? '按单利推定的重算差额超过项目容差；原披露口径未确认，须核实后才能判断是否真正存在差异。'
+      : assumed && comparison?.exceeds_tolerance === false
+        ? '按单利推定的重算差额未超过项目容差；原披露口径仍需确认。'
+        : assumed ? '已按单利推定重算，但缺少可比较的标注值或披露口径尚未确认。'
+      : comparison?.exceeds_tolerance === true
     ? '同口径自算值与标注值的差异超过本项目设置的容差；该阈值不是违法认定标准。'
-      : comparison === false
+      : comparison?.exceeds_tolerance === false
         ? '同口径重算值与披露值的差异未超过本项目设置的容差。'
         : '缺少可比较的计算结果或明确的披露口径，暂不能判断差异。',
     '核实实际到账和还款安排，并明确明示表采用的年化口径。');
@@ -158,7 +164,9 @@ export function evaluateRules(
       : '已知正常增信费用均已计入，或完整披露事实未显示该项缺失。',
   '核对担保、保证保险等正常增信费用是否纳入综合融资成本计算。', feeFields.concat(disclosureFields));
 
-  const directPlatformFees = normalFees.filter((fee) => fee.payee_type === 'platform' && fee.amount !== null);
+  // A known platform fee does not cease to be a fee because its amount or
+  // disclosure status is unknown. An explicitly zero amount is not a charge.
+  const directPlatformFees = normalFees.filter((fee) => fee.payee_type === 'platform' && (fee.amount === null || /[1-9]/.test(fee.amount)));
   if (!['bank', 'consumer_finance'].includes(facts.lender.type)) {
     push('R05', facts.lender.type === 'unknown' ? 'insufficient_data' : 'not_applicable',
       facts.lender.type === 'unknown' ? '放贷主体类型未知，且字段不足以确认是否属于互联网助贷。' : '当前类型无法确认属于该通知适用或参照执行的主体范围。',
@@ -166,7 +174,7 @@ export function evaluateRules(
   } else if (facts.lender.internet_assisted === false) {
     push('R05', 'not_applicable', '已确认不属于商业银行互联网助贷业务。', '按实际业务模式核实其他收费要求。', feeFields);
   } else if (facts.lender.internet_assisted === true && directPlatformFees.length) {
-    push('R05', 'triggered', '已确认属于商业银行互联网助贷业务，且存在平台向借款人直接收取的正常履约费用。', '向贷款人核实平台收费安排及费用收取依据。', feeFields);
+    push('R05', 'triggered', '已确认属于商业银行互联网助贷业务，且存在平台向借款人直接收取的正常履约收费项目；收费金额和是否列在明示表中分别核对。', '向贷款人核实平台收费安排及费用收取依据。', feeFields);
   } else if (facts.lender.internet_assisted === true && facts.disclosure.items_complete === true && facts.fees.every(fee => fee.contingent === true || fee.contingent === false && fee.payee_type !== 'unknown')) {
     push('R05', 'not_triggered', '已确认的完整费用清单未显示平台直接收费。', '保留费用清单和实际扣款记录。', feeFields);
   } else if (directPlatformFees.length) {
@@ -178,13 +186,18 @@ export function evaluateRules(
   const studentConditions = [facts.lender.type === 'microloan', facts.borrower.is_student === true, facts.lender.internet_consumer_loan === true];
   const studentHasFalse = facts.lender.type !== 'unknown' && facts.lender.type !== 'microloan'
     || facts.borrower.is_student === false || facts.lender.internet_consumer_loan === false;
+  const onlineClue = facts.lender.internet_consumer_loan === null && evidence.some(item =>
+    /(?:internet_consumer_loan|loan|lender|贷款|借款)/i.test(item.field) && /线上|在线|网络申请|互联网|\bAPP\b/i.test(item.quote)
+    && !/(?:未|不|非|没有|禁止)(?:通过|使用|采用|在线|线上|互联网|网络|APP)/i.test(item.quote));
   push('R06', studentHasFalse ? 'not_triggered' : studentConditions.every(Boolean) ? 'triggered' : 'insufficient_data',
     studentHasFalse
       ? '小额贷款公司、在校学生、互联网消费贷款三个条件至少一个已明确不成立。'
       : studentConditions.every(Boolean)
         ? '三个条件均明确为真：放贷主体为小额贷款公司、借款人为在校学生、贷款为互联网消费贷款。'
-        : '三项适用条件中至少一项未知；不得把未知条件当作成立或不成立。',
-    '核实放贷主体、在校身份及贷款产品属性；该提示不替代个案法律判断。', ['学生', 'student', '放贷', '贷款', 'lender']);
+        : onlineClue
+          ? '材料存在线上或互联网办理线索，但仍需核实其是否为互联网消费贷款；三项条件未全部确认。'
+          : '三项适用条件中至少一项未知；不得把未知条件当作成立或不成立。',
+    '核实放贷主体、在校身份及贷款产品属性；该提示不替代个案法律判断。', ['学生', 'student', '放贷', '贷款', 'lender', 'loan']);
 
   push('R07', facts.borrower.is_student === false ? 'not_applicable' : facts.borrower.is_student === null ? 'insufficient_data' : facts.lender.licensed === false ? 'triggered' : facts.lender.licensed === true ? 'not_triggered' : 'insufficient_data',
     facts.borrower.is_student===false?'已确认借款人不是在校学生，不套用本条针对大学生信贷服务的资质核查。':facts.borrower.is_student===null?'借款人是否为在校学生未知，无法判断本条资质核查的适用性。':facts.lender.licensed === false

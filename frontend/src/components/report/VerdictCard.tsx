@@ -12,7 +12,7 @@ export function VerdictCard({ report }: { report: AuditReport }) {
   const comparison = report.calculation?.calculation.comparison;
   const tone = levelTone[report.conclusion.level];
   const method = comparison?.method;
-  const methodLabel = method ? methodNames[method] ?? method : '口径待确认';
+  const methodLabel = comparison?.method_basis === 'assumed_simple' ? '按单利推定' : comparison?.method_basis === 'unavailable' ? '口径待确认' : method ? methodNames[method] ?? method : '口径待确认';
   const { confirmed_issues, pending_checks, advisory_hints } = report.conclusion.counts;
   const differenceRule = report.rules.find((rule) => rule.rule_id === 'R02');
   const differencePresentation = differenceRule ? rulePresentation(differenceRule) : null;
@@ -58,7 +58,7 @@ export function VerdictCard({ report }: { report: AuditReport }) {
           <Metric
             label="两者差额"
             value={comparison?.gap_pp == null ? '口径待确认' : `${decimal(comparison.gap_pp)} 个百分点`}
-            note={comparison?.exceeds_tolerance === true ? '超过比较容差' : comparison?.exceeds_tolerance === false ? '未超过比较容差' : '是否超出容差未知'}
+            note={comparison?.method_basis === 'assumed_simple' ? '按单利推定，披露口径待确认' : comparison?.exceeds_tolerance === true ? '超过比较容差' : comparison?.exceeds_tolerance === false ? '未超过比较容差' : '是否超出容差未知'}
             tone={comparison?.exceeds_tolerance === true ? differenceTone : 'neutral'}
           />
         </div>

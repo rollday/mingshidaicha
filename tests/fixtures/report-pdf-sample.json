@@ -1,0 +1,82 @@
+{
+  "title": "贷款材料核查报告",
+  "synthetic_sample": true,
+  "generated_at": "2026-10-29T09:00:00+08:00",
+  "generation": { "mode": "template", "error_code": "SYNTHETIC_DEMO" },
+  "grading_policy": "2026-10-28.v1",
+  "conclusion": {
+    "level": "yellow",
+    "partial": false,
+    "information_incomplete": true,
+    "counts": { "confirmed_issues": 1, "pending_checks": 1, "advisory_hints": 1, "not_triggered": 1, "not_applicable": 0 },
+    "summary": "本文件使用完全虚构的机构、材料与金额，仅展示报告 PDF 的内容结构。模拟披露年化与重算结果存在差异，相关口径和费用仍需结合合同核对。"
+  },
+  "facts": {
+    "borrower": { "is_student": false, "purpose": "演示用途：中文·项目符号•数字12345，百分比12.5%" },
+    "lender": { "name": "虚构示例金融机构", "type": "bank", "licensed": null, "internet_consumer_loan": null, "internet_assisted": null },
+    "loan": { "principal": "10000", "disbursed": "9500", "term_periods": 12, "periods_per_year": 12, "repay_method": "equal_installment", "period_payment": "900", "nominal_apr": "0.12", "start_date": "2026-01-01" },
+    "repayments": [{ "amount": "900", "period": 1 }, { "amount": "900", "period": 12 }],
+    "fees": [
+      { "id": "synthetic-service", "name": "模拟服务费", "amount": "80", "timing": "upfront", "period": 0, "payee": "虚构示例服务方", "payee_type": "other", "in_disclosure": false, "included_in_cashflows": false, "included_in_disclosed_cost": false, "contingent": false },
+      { "id": "synthetic-contingent", "name": "模拟或有费用", "amount": "25", "timing": "unknown", "period": null, "payee": null, "payee_type": "unknown", "in_disclosure": null, "included_in_cashflows": null, "included_in_disclosed_cost": null, "contingent": true }
+    ],
+    "disclosure": { "present": true, "quoted_apr": "0.10", "quoted_method": "effective", "items_complete": false, "contingent_disclosed": null },
+    "funds_to": "borrower",
+    "marketing_phrases": []
+  },
+  "calculation": {
+    "input": { "timing": "periodic", "periods_per_year": 12, "comparison_tolerance_pp": "0.5" },
+    "calculation": {
+      "cashflows": [{ "period": 0, "amount": "9500" }, { "period": 1, "amount": "-900" }, { "period": 12, "amount": "-900" }],
+      "nominal_apr": "0.10",
+      "effective_apr": "0.106",
+      "simple_apr": "0.11",
+      "xirr_apr": null,
+      "comparison": { "method": "effective", "method_basis": "explicit", "disclosed_method": "effective", "method_label": "复利年化", "quoted_apr": "0.10", "computed_apr": "0.106", "gap_pp": "0.6", "exceeds_tolerance": true }
+    },
+    "summary": { "principal": "10000", "disbursed": "9500", "total_repayment": "10800", "total_additional_fees": "80", "total_cost": "1380" },
+    "fee_totals": [{ "id": "synthetic-service", "name": "模拟服务费", "total": "80", "contingent": false }]
+  },
+  "calculation_error": null,
+  "rules": [
+    { "rule_id": "R02", "title": "模拟披露口径核对", "nature": "disclosure", "status": "triggered", "reason": "模拟材料中的披露口径需要进一步核对。此描述仅用于 PDF 样例，不代表真实合同结论。", "action": "将合同中的披露方式与还款计划逐项比对。", "citation": { "document": "虚构示例规则说明", "article": "演示段落", "quote": "本段为虚构样例，不引用真实法规。", "url": "https://example.invalid/rules/demo", "effective_date": "2026-01-01", "verification": "local_material_only" }, "evidence_ids": ["synthetic-evidence-1"] },
+    { "rule_id": "R04", "title": "模拟收费主体待核", "nature": "prohibited", "status": "insufficient_data", "reason": "现有模拟材料没有提供足够信息来判断收费主体。信息不足不等于已发现问题。", "action": "查看合同附件并确认收费主体及付款去向。", "citation": null, "evidence_ids": ["synthetic-evidence-2"] },
+    { "rule_id": "R10", "title": "模拟阅读提示", "nature": "advisory", "status": "triggered", "reason": "此条为演示性阅读提示，不是禁止性问题。", "action": "签署前确认各项费用的发生条件。", "citation": null, "evidence_ids": [] },
+    { "rule_id": "R19", "title": "模拟未命中项目", "nature": "disclosure", "status": "not_triggered", "reason": "当前模拟输入未触发该检查项。", "action": "", "citation": null, "evidence_ids": [] }
+  ],
+  "evidence": [
+    { "id": "synthetic-evidence-1", "field": "disclosure.quoted_apr", "document_id": "synthetic-document-1", "page": 1, "quote": "模拟合同摘录：示例年化口径为百分之十。", "source_type": "text" },
+    { "id": "synthetic-evidence-2", "field": "fees.payee", "document_id": "synthetic-document-1", "page": null, "quote": "模拟材料未注明示例费用的收取主体。", "source_type": "vision_transcript" }
+  ],
+  "corrections": [{ "field": "loan.disbursed", "before": "10000", "after": "9500" }],
+  "narrative": {
+    "summary": "仅用于测试生成的虚构报告。",
+    "findings": [{ "rule_id": "R02", "explanation": "虚构样例解释。" }],
+    "actions": [
+      { "rule_id": "R02", "text": "核对模拟披露方式与还款计划。" },
+      { "rule_id": "R04", "text": "向虚构示例机构确认收费主体。" },
+      { "rule_id": null, "text": "保存合同和还款计划的副本。" }
+    ],
+    "limitations": [
+      "本报告只根据提供的模拟材料和确认信息整理。",
+      "虚构示例机构的资质未作任何实际查询或核验。",
+      "金额、日期和规则说明均为演示用途，不代表真实业务结果。"
+    ]
+  },
+  "disclaimer": "本报告基于提供材料进行事实比对，不构成法律意见或借贷建议。",
+  "public_source_search": {
+    "name": "虚构示例金融机构",
+    "queried_at": "2026-10-29T09:05:00+08:00",
+    "provider": "mcp_websearch",
+    "scope": "public_index_search",
+    "license_determination": "not_performed",
+    "categories": [
+      { "kind": "license", "status": "no_indexed_results", "sources": [] },
+      { "kind": "registry", "status": "sources_found", "sources": [{ "title": "虚构查询结果页面", "url": "https://example.invalid/search/demo", "snippet": "此处为模拟检索摘要，不对应真实机构。", "official": false, "name_match": false }] },
+      { "kind": "penalty", "status": "unavailable", "sources": [] }
+    ],
+    "limitations": ["该模拟结果仅展示格式，不代表实际检索。"],
+    "official_documents": {}
+  },
+  "processing_activity": []
+}

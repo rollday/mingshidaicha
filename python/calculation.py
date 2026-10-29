@@ -192,8 +192,8 @@ def _calculate(payload: Any) -> dict[str, Any]:
     else:
         result.update(period_rate=None, nominal_apr=None, effective_apr=None, simple_apr=None, xirr_apr=_fmt(rate))
 
-    method = payload.get("quoted_method", "unknown")
-    if method not in ("nominal", "effective", "simple", "xirr", "unknown"):
+    disclosed_method = payload.get("quoted_method", "unknown")
+    if disclosed_method not in ("nominal", "effective", "simple", "xirr", "unknown"):
         raise CalculationError("INVALID_METHOD", "quoted_method must be nominal, effective, simple, xirr, or unknown")
     quoted_raw = payload.get("quoted_apr")
     quoted = _decimal(quoted_raw, "quoted_apr") if quoted_raw is not None else None
@@ -205,17 +205,27 @@ def _calculate(payload: Any) -> dict[str, Any]:
         "simple": result["simple_apr"],
         "xirr": result["xirr_apr"],
     }
-    computed = candidates.get(method) if method != "unknown" else None
+    method = "simple" if disclosed_method == "unknown" else disclosed_method
+    if disclosed_method == "unknown":
+        method_basis = "assumed_simple" if candidates["simple"] is not None else "unavailable"
+    else:
+        method_basis = "explicit"
+    computed = candidates.get(method) if method_basis != "unavailable" else None
     computed_decimal = Decimal(computed) if computed is not None else None
     gap = (computed_decimal - quoted) * 100 if computed_decimal is not None and quoted is not None else None
-    result["comparison"] = {
+    comparison = {
         "method": method,
+        "method_basis": method_basis,
+        "disclosed_method": disclosed_method,
         "quoted_apr": quoted_raw,
         "computed_apr": computed,
         "gap_pp": _fmt(gap) if gap is not None else None,
         # Account only for solver convergence uncertainty, not display rounding.
         "exceeds_tolerance": abs(gap) > tolerance + Decimal("1e-38") if gap is not None else None,
     }
+    if disclosed_method == "unknown":
+        comparison["method_label"] = "按单利推定" if method_basis == "assumed_simple" else "待确认"
+    result["comparison"] = comparison
     return result
 
 

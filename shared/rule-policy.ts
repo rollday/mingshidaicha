@@ -1,5 +1,5 @@
 /** Versioned project grading. Colours are not statutory classifications. */
-export const RULE_GRADING_POLICY='2026-10-28.v1' as const;
+export const RULE_GRADING_POLICY='2026-10-29.v1' as const;
 export type RuleNature='prohibited'|'disclosure'|'advisory';
 export type RuleStatus='triggered'|'not_triggered'|'insufficient_data'|'not_applicable';
 export type RuleLevel='red'|'yellow'|'blue';

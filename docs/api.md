@@ -47,6 +47,8 @@ task.started → case.confirmed → case.checked
 
 每个命令都有唯一 `request_id`。前端须按 ID 关联进度和结果，不能把其他任务事件覆盖到当前任务。`case.confirmed` 会增加版本并保存修正记录；使用最新版本再次确认可以重算。`case.get {case_id}` 回读当前快照；`case.report {case_id,expected_revision}` 重试报告，必须已经确认过。
 
+计算结果的 `comparison.method_basis` 区分 `explicit`、`assumed_simple` 和 `unavailable`；`disclosed_method` 保留用户确认的原始披露口径。原口径未知且满足单利计算条件时，可以展示“按单利推定”的结果，R02 仍列为待核实；不能计算或缺少标注值时不生成差额结论。
+
 材料不足时会额外发出 `case.calculation_unavailable`，随后仍可能得到 `report.result`；AI 输出不可用时发出 `report.warning`，报告标记 `generation.mode=template`。两者均不应被前端当成整个任务失败。真正失败使用 `task.error` / `request.error`，包含 `code`、`message` 和可选 `details`。
 
 ## PDF 解析与原文定位
@@ -98,7 +100,7 @@ PDF worker 可选 `stream_progress:true` 时按 NDJSON 发送 `{progress:{stage:
 
 ## 显示规则
 
-规则性质、必要条件和完整分级表见 [rules.md](rules.md)。本次策略为 `2026-10-28.v1`。每项规则新增 `nature`（`prohibited/disclosure/advisory`）、`default_level`、`fact_state`（`sufficient/insufficient/not_applicable`）、`risk_level` 和 `grading_policy`。`level` 依据性质与本次四态结果动态计算；`default_level` 不能当本次结论。为兼容既有字段，未命中/不适用的 `level` 为 blue，前端仍须按状态显示绿/中性。
+规则性质、必要条件和完整分级表见 [rules.md](rules.md)。本次策略为 `2026-10-29.v1`。每项规则新增 `nature`（`prohibited/disclosure/advisory`）、`default_level`、`fact_state`（`sufficient/insufficient/not_applicable`）、`risk_level` 和 `grading_policy`。`level` 依据性质与本次四态结果动态计算；`default_level` 不能当本次结论。为兼容既有字段，未命中/不适用的 `level` 为 blue，前端仍须按状态显示绿/中性。
 
 报告新增顶层 `grading_policy`、`conclusion.counts`（`confirmed_issues/pending_checks/advisory_hints/not_triggered/not_applicable`）与 `conclusion.information_incomplete`。总评颜色只汇总确定命中的禁止性/披露核查，信息不足和阅读提示单独计数；总评 blue 不表示已核验安全或合规。`partial` 仍只表示本次不能核算。实时预览与最终报告统一调用共享的 `rulePresentation`，不得将所有 triggered 都画红，也不得把所有 unknown 都画黄。
 
@@ -119,3 +121,7 @@ PDF worker 可选 `stream_progress:true` 时按 NDJSON 发送 `{progress:{stage:
 会话在服务内存中保留，15 分钟无操作过期；服务重启后不可恢复。`CaseClient` 在当前页面生命周期保留令牌，重连后使用 `case.get` 回读已创建案件。不会写入 localStorage。全部 WS 断开会取消任务，不能保证重放进度或恢复尚未完成的抽取。
 
 `REVISION_CONFLICT` 表示客户端版本过期，应先回读；`UNAUTHORIZED` 表示需要新建会话。任务超时、文件过大、数据冲突等都保留后端原始错误码，界面使用中性错误状态，避免将技术失败显示成贷款风险。
+
+## 报告 PDF 导出
+
+`POST /api/reports/pdf` 使用当前会话令牌，并只接收 `{ "case_id": "…", "expected_revision": 1 }`，请求体上限为 4 KiB。服务端从该会话的 `workflow` 读取案件；案件版本不匹配时返回 `409 REVISION_CONFLICT`，报告尚未完成时返回 `409 REPORT_NOT_READY`，其他会话中的案件不可访问。PDF 仅由服务端已完成的报告生成；渲染后、发送文件前再次核对案件记录、版本、状态、报告引用及报告结构化内容，期间发生变化则返回 `409 REVISION_CONFLICT`。会话结束时会取消对应 PDF worker。成功响应为 `application/pdf` 附件；旧的完整报告 JSON 请求不再兼容。生成过程使用嵌入的 Arphic UMing TrueType 字体，并在内存中完成；运行环境需安装 Debian `fonts-arphic-uming`，字体路径为 `/usr/share/fonts/truetype/arphic/uming.ttc`。

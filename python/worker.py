@@ -11,10 +11,12 @@ try:
     from .calculation import CalculationError, calculate
     from .loan_plan import calculate_loan
     from .pdf_tools import PdfError, parse_pdf
+    from .report_pdf import generate_report_pdf
 except ImportError:  # Support direct execution from the python directory.
     from calculation import CalculationError, calculate
     from loan_plan import calculate_loan
     from pdf_tools import PdfError, parse_pdf
+    from report_pdf import generate_report_pdf
 
 
 def _dispatch(
@@ -31,13 +33,15 @@ def _dispatch(
         return calculate_loan(payload)
     if operation == "parse_pdf":
         return parse_pdf(payload, progress=progress)
+    if operation == "generate_report_pdf":
+        return generate_report_pdf(payload)
     if operation == 'prepare_visual':
         from visual import prepare_visual
         return prepare_visual(payload)
     if operation == 'parse_official_html':
         from official_html import parse_official_html
         return parse_official_html(payload)
-    raise CalculationError("UNKNOWN_OPERATION", "operation must be 'calculate', 'calculate_loan', or 'parse_pdf'")
+    raise CalculationError("UNKNOWN_OPERATION", "unsupported worker operation")
 
 
 def main() -> int:

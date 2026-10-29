@@ -156,7 +156,8 @@ function CalculationPreview({ calculation }: { calculation: LoanResult | null })
   if (!calculation) {
     return <p className="text-sm text-mute">当前材料暂不足以完成借款成本计算。</p>;
   }
-  const comparisonMethod = methodNames[calculation.calculation.comparison.method] ?? calculation.calculation.comparison.method;
+  const comparison = calculation.calculation.comparison;
+  const comparisonMethod = comparison.method_basis === 'assumed_simple' ? '按单利推定' : comparison.method_basis === 'unavailable' ? '口径待确认' : methodNames[comparison.method] ?? comparison.method;
   const rows = [
     ['本金', money(calculation.summary.principal)],
     ['实际到账', money(calculation.summary.disbursed)],
@@ -183,7 +184,7 @@ function RulePreview({ rules }: { rules: RuleResult[] }) {
       {rules.map((rule) => {
         const presentation = rulePresentation(rule);
         return (
-          <li key={rule.rule_id} id={`rule-${rule.rule_id}`} className="py-3 first:pt-0 last:pb-0">
+          <li key={rule.rule_id} className="py-3 first:pt-0 last:pb-0">
             <div className="flex flex-wrap items-center gap-2">
               <Tag tone={presentation.tone as Tone}>{presentation.label}</Tag>
               <Tag tone="neutral">{presentation.natureLabel}</Tag>

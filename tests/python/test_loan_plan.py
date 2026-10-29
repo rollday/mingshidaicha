@@ -26,6 +26,29 @@ class LoanPlanTests(unittest.TestCase):
         self.assertEqual(result["summary"]["principal"], "10000")
         self.assertEqual(result["summary"]["disbursed"], "10000")
         self.assertEqual(result["summary"]["total_repayment"], "10661.88")
+        self.assertEqual(result["input"]["quoted_method"], "unknown")
+        self.assertEqual(result["calculation"]["comparison"]["method"], "simple")
+        self.assertEqual(result["calculation"]["comparison"]["method_basis"], "unavailable")
+        self.assertEqual(result["calculation"]["comparison"]["disclosed_method"], "unknown")
+        self.assertEqual(result["calculation"]["comparison"]["method_label"], "待确认")
+        self.assertIsNone(result["calculation"]["comparison"]["computed_apr"])
+        self.assertIsNone(result["calculation"]["comparison"]["gap_pp"])
+
+    def test_unknown_method_is_presumed_simple_for_single_lump_payment(self):
+        case = facts(principal="1000", disbursed="1000", term_periods=1,
+                     periods_per_year=1, repay_method="schedule", period_payment=None,
+                     nominal_apr=None)
+        case["repayments"] = [{"amount": "1080", "period": 1}]
+        case["disclosure"] = {"quoted_apr": "0.08", "quoted_method": "unknown"}
+        result = calculate_loan(case)
+        comparison = result["calculation"]["comparison"]
+        self.assertEqual(result["input"]["quoted_method"], "unknown")
+        self.assertEqual(comparison["method"], "simple")
+        self.assertEqual(comparison["method_basis"], "assumed_simple")
+        self.assertEqual(comparison["disclosed_method"], "unknown")
+        self.assertEqual(comparison["method_label"], "按单利推定")
+        self.assertEqual(comparison["computed_apr"], "0.08")
+        self.assertEqual(comparison["gap_pp"], "0")
 
     def test_per_period_fee_is_added_once_per_period_and_increases_rate(self):
         case = facts()
@@ -123,6 +146,8 @@ class LoanPlanTests(unittest.TestCase):
         self.assertEqual(result["input"]["repayments"][0]["date"], "2025-02-15")
         self.assertIsNotNone(result["calculation"]["xirr_apr"])
         self.assertEqual(result["calculation"]["comparison"]["method"], "xirr")
+        self.assertEqual(result["calculation"]["comparison"]["method_basis"], "explicit")
+        self.assertEqual(result["calculation"]["comparison"]["disclosed_method"], "xirr")
 
     def test_nine_public_calculation_examples_keep_expected_core_rates(self):
         cases = [

@@ -332,6 +332,7 @@ def calculate_loan(payload: Any) -> dict[str, Any]:
             "disbursements": [disbursement],
             "repayments": payment_rows,
             "fees": fee_rows,
+            # Preserve the disclosure verbatim; calculate() reports any simple fallback separately.
             "quoted_method": payload.get("disclosure", {}).get("quoted_method", "unknown")
             if isinstance(payload.get("disclosure", {}), dict) else "unknown",
             "comparison_tolerance_pp": "0.5",

@@ -68,6 +68,24 @@ export class CaseClient {
     if (!response.ok) throw body.error ?? { code: 'HTTP_ERROR', message: '请求失败，请稍后重试。' };
     return body as T;
   }
+  async downloadReportPdf(caseId: string, expectedRevision: number): Promise<Blob> {
+    const headers = new Headers({ 'Content-Type': 'application/json', 'Accept': 'application/pdf' });
+    if (this.session) headers.set('X-Session-Token', this.session.session_token);
+    let response: Response;
+    try {
+      response = await fetch('/api/reports/pdf', { method: 'POST', headers, body: JSON.stringify({ case_id: caseId, expected_revision: expectedRevision }) });
+    } catch {
+      throw { code: 'NETWORK_ERROR', message: '无法连接报告导出服务，请检查网络后重试。' } satisfies ApiError;
+    }
+    if (!response.ok) {
+      const body = await response.json().catch(() => null) as { error?: ApiError } | null;
+      throw body?.error ?? { code: 'HTTP_ERROR', message: 'PDF 报告生成失败，请稍后重试。' };
+    }
+    if (!response.headers.get('content-type')?.toLowerCase().includes('application/pdf')) {
+      throw { code: 'INVALID_PDF_RESPONSE', message: '服务返回的报告文件格式无效。' } satisfies ApiError;
+    }
+    return response.blob();
+  }
   private failure(error: unknown) {
     const value = error as Partial<ApiError>;
     const disconnected = !value.code || ['NETWORK_ERROR','OFFLINE','CONNECTION_TIMEOUT'].includes(value.code);

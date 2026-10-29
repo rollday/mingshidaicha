@@ -107,6 +107,13 @@ test('R02 uses only Python comparison.exceeds_tolerance and preserves unknown', 
   assert.equal(byId(run(baseFacts, null), 'R02').status, 'insufficient_data');
 });
 
+test('R02 exposes an assumed simple-rate discrepancy as pending until the method is confirmed', () => {
+  const calculation=loanResult(true);
+  calculation.calculation.comparison={method:'simple',method_basis:'assumed_simple',disclosed_method:'unknown',quoted_apr:'0.08',computed_apr:'0.10',gap_pp:'2',exceeds_tolerance:true};
+  const row=byId(run(baseFacts,calculation),'R02');
+  assert.equal(row.status,'insufficient_data');assert.equal(row.risk_level,null);assert.match(row.reason,/按单利推定.*超过/);
+});
+
 test('R05 does not assert platform fee illegality without proof of assist-loan applicability', () => {
   const facts: CaseFacts = {
     ...baseFacts,
@@ -159,4 +166,29 @@ test('a fee outside repayment totals is distinct from a fee omitted from disclos
 test('confirmed assisted lending scope allows a specific platform fee check', () => {
   const facts: CaseFacts = { ...baseFacts, lender: { ...baseFacts.lender, internet_assisted: true }, fees: [{ id: 'platform', name: '服务费', amount: '50', timing: 'per_period', period: null, payee: '平台', payee_type: 'platform', in_disclosure: false, included_in_cashflows: false, included_in_disclosed_cost: false, contingent: false }] };
   assert.equal(byId(run(facts), 'R05').status, 'triggered');
+});
+
+test('R05 uses the collecting party independently of disclosure and fee amount', () => {
+  const facts: CaseFacts = { ...baseFacts, lender: { ...baseFacts.lender, internet_assisted: true }, fees: [{ id:'f',name:'平台服务费',amount:null,timing:'upfront',period:null,payee:'平台',payee_type:'platform',in_disclosure:true,included_in_cashflows:false,included_in_disclosed_cost:true,contingent:false }] };
+  assert.equal(byId(run(facts),'R05').status,'triggered');
+  facts.fees[0]!.in_disclosure=false;
+  assert.equal(byId(run(facts),'R05').status,'triggered');
+  facts.fees[0]!.amount='0';
+  assert.equal(byId(run(facts),'R05').status,'not_triggered');
+});
+
+test('online application is a traceable clue, not proof of an internet consumer loan', () => {
+  const facts: CaseFacts = {...baseFacts,borrower:{is_student:true,purpose:'普通消费'},lender:{...baseFacts.lender,type:'microloan',internet_consumer_loan:null}};
+  const evidence: Evidence[]=[{id:'online',field:'lender.internet_consumer_loan',document_id:'doc',page:1,quote:'借款通过APP线上申请'}];
+  const row=byId(run(facts,loanResult(false),evidence),'R06');
+  assert.equal(row.status,'insufficient_data');assert.match(row.reason,/线上|互联网/);assert(row.evidence_ids.includes('online'));
+  facts.lender.internet_consumer_loan=true;
+  assert.equal(byId(run(facts,loanResult(false),evidence),'R06').status,'triggered');
+  facts.lender.internet_consumer_loan=false;
+  assert.equal(byId(run(facts,loanResult(false),evidence),'R06').status,'not_triggered');
+});
+
+test('ordinary zero down-payment wording is not a marketing risk hit', () => {
+  const facts={...baseFacts,marketing_phrases:['无抵押、秒到账，0首付购买课程']};
+  assert.equal(byId(run(facts),'R09').status,'not_triggered');
 });
