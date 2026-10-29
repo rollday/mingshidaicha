@@ -98,9 +98,11 @@ PDF worker 可选 `stream_progress:true` 时按 NDJSON 发送 `{progress:{stage:
 
 重试先撤回上一份草稿；取消、失败或断线清空草稿内容，已完成核算可以保留。草稿不写入案件快照，不在断线后恢复。事件只作用于当前 `request_id`，取消或结束后的迟到分片不得重新显示；重连通过 `case.get` 恢复处理记录和已核算结果。处理记录与材料同样只在会话内存存活，服务重启或会话过期后不可恢复。
 
+模型返回 `MODEL_INVALID_JSON` 时自动重试一次。字段抽取的 JSON 重试与结构修复共用一次额度；报告生成的 JSON 重试与内容校验修复也共用一次额度，因此每次字段抽取或报告撰写最多请求模型两次。重试报告流时先撤回首轮草稿；取消、网络错误和其他模型错误不会触发 JSON 重试。
+
 ## 显示规则
 
-规则性质、必要条件和完整分级表见 [rules.md](rules.md)。本次策略为 `2026-10-29.v1`。每项规则新增 `nature`（`prohibited/disclosure/advisory`）、`default_level`、`fact_state`（`sufficient/insufficient/not_applicable`）、`risk_level` 和 `grading_policy`。`level` 依据性质与本次四态结果动态计算；`default_level` 不能当本次结论。为兼容既有字段，未命中/不适用的 `level` 为 blue，前端仍须按状态显示绿/中性。
+规则性质、必要条件和完整分级表见 [rules.md](rules.md)。本次策略为 `2026-10-29.v2`。每项规则新增 `nature`（`prohibited/disclosure/advisory`）、`default_level`、`fact_state`（`sufficient/insufficient/not_applicable`）、`risk_level` 和 `grading_policy`。`level` 依据性质与本次四态结果动态计算；`default_level` 不能当本次结论。为兼容既有字段，未命中/不适用的 `level` 为 blue，前端仍须按状态显示绿/中性。
 
 报告新增顶层 `grading_policy`、`conclusion.counts`（`confirmed_issues/pending_checks/advisory_hints/not_triggered/not_applicable`）与 `conclusion.information_incomplete`。总评颜色只汇总确定命中的禁止性/披露核查，信息不足和阅读提示单独计数；总评 blue 不表示已核验安全或合规。`partial` 仍只表示本次不能核算。实时预览与最终报告统一调用共享的 `rulePresentation`，不得将所有 triggered 都画红，也不得把所有 unknown 都画黄。
 

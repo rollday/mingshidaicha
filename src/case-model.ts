@@ -24,34 +24,52 @@ export class CaseModel {
     this.settings = settings;
     if (settings.apiKey) this.client = new OpenAI({ apiKey: settings.apiKey, baseURL: settings.baseURL, timeout: settings.modelTimeout, maxRetries: 0 });
   }
-  async json(system: string, content: string | ChatCompletionContentPart[], signal: AbortSignal, progress: (bytes: number) => void, onDelta?: (delta:string)=>void): Promise<unknown> {
+  private async jsonOnce(system: string, content: string | ChatCompletionContentPart[], signal: AbortSignal, progress: (bytes: number) => void, onDelta?: (delta:string)=>void): Promise<unknown> {
     if (!this.client) throw new AppError('MODEL_NOT_CONFIGURED', '尚未配置模型服务。', 503);
-    let text = '', finish: string | null = null;
-    try {
-      const request: ChatCompletionCreateParamsStreaming & { thinking?: { type: 'enabled' | 'disabled' } } = { model: this.settings.model, stream: true,
-        reasoning_effort: this.settings.reasoningEffort === 'none' ? undefined : this.settings.reasoningEffort,
-        response_format: { type: 'json_object' }, max_tokens: 10000,
-        messages: [{ role: 'system', content: system }, { role: 'user', content }],
-      };
-      if (this.settings.model.startsWith('deepseek')) request.thinking = { type: this.settings.reasoningEffort === 'none' ? 'disabled' : 'enabled' };
-      const stream = await this.client.chat.completions.create(request, { signal });
-      for await (const chunk of stream) {
-        if(signal.aborted)throw new AppError('TASK_CANCELLED','任务已取消。',499);
-        if (chunk.choices[0]?.finish_reason) finish = chunk.choices[0].finish_reason;
-        const delta = chunk.choices[0]?.delta.content;
-        if (delta) {
-          text += delta;
-          if (text.length > 1000000) { stream.controller.abort(); throw new AppError('MODEL_OUTPUT_TOO_LARGE', '模型输出过大。', 502); }
-          progress(Buffer.byteLength(text));
+    const client = this.client;
+    const request: ChatCompletionCreateParamsStreaming & { thinking?: { type: 'enabled' | 'disabled' } } = { model: this.settings.model, stream: true,
+      reasoning_effort: this.settings.reasoningEffort === 'none' ? undefined : this.settings.reasoningEffort,
+      response_format: { type: 'json_object' }, max_tokens: 10000,
+      messages: [{ role: 'system', content: system }, { role: 'user', content }],
+    };
+    if (this.settings.model.startsWith('deepseek')) request.thinking = { type: this.settings.reasoningEffort === 'none' ? 'disabled' : 'enabled' };
+
+    const requestOnce = async (): Promise<unknown> => {
+      let text = '', finish: string | null = null;
+      try {
+        const stream = await client.chat.completions.create(request, { signal });
+        for await (const chunk of stream) {
+          if (signal.aborted) throw new AppError('TASK_CANCELLED', '任务已取消。', 499);
+          if (chunk.choices[0]?.finish_reason) finish = chunk.choices[0].finish_reason;
+          const delta = chunk.choices[0]?.delta.content;
+          if (delta) {
+            text += delta;
+            if (text.length > 1000000) { stream.controller.abort(); throw new AppError('MODEL_OUTPUT_TOO_LARGE', '模型输出过大。', 502); }
+            progress(Buffer.byteLength(text));
             onDelta?.(delta);
+          }
         }
+        if (finish !== 'stop') throw new AppError('MODEL_INCOMPLETE', '模型输出未完成，请重试。', 502, { finish_reason: finish, received_characters: text.length });
+        try { return JSON.parse(text); } catch { throw new AppError('MODEL_INVALID_JSON', '模型返回无效 JSON。', 502); }
+      } catch (error) {
+        if (signal.aborted) throw new AppError('TASK_CANCELLED', '任务已取消。', 499);
+        if (error instanceof AppError) throw error;
+        throw new AppError(error instanceof OpenAI.APIError && error.status === 429 ? 'MODEL_RATE_LIMIT' : 'MODEL_UNAVAILABLE', '模型服务暂不可用。', 502);
       }
-      if (finish !== 'stop') throw new AppError('MODEL_INCOMPLETE', '模型输出未完成，请重试。', 502, { finish_reason: finish, received_characters: text.length });
-      try { return JSON.parse(text); } catch { throw new AppError('MODEL_INVALID_JSON', '模型返回无效 JSON。', 502); }
+    };
+
+    return requestOnce();
+  }
+
+  async json(system: string, content: string | ChatCompletionContentPart[], signal: AbortSignal, progress: (bytes: number) => void, onDelta?: (delta:string)=>void, onRetry?: () => void, retryBudget: { remaining: number } = { remaining: 1 }): Promise<unknown> {
+    try {
+      return await this.jsonOnce(system, content, signal, progress, onDelta);
     } catch (error) {
       if (signal.aborted) throw new AppError('TASK_CANCELLED', '任务已取消。', 499);
-      if (error instanceof AppError) throw error;
-      throw new AppError(error instanceof OpenAI.APIError && error.status === 429 ? 'MODEL_RATE_LIMIT' : 'MODEL_UNAVAILABLE', '模型服务暂不可用。', 502);
+      if (!(error instanceof AppError) || error.code !== 'MODEL_INVALID_JSON' || retryBudget.remaining <= 0) throw error;
+      retryBudget.remaining--;
+      onRetry?.();
+      return this.jsonOnce(system, content, signal, progress, onDelta);
     }
   }
 
@@ -67,11 +85,13 @@ disclosure.present表示是否提供明示表。quoted_method仅明确标注时�
 funds_to为borrower/training_provider/third_party/unknown；marketing_phrases仅摘录确有的话术。
 每个关键金额、期数、利率、收费主体、学生身份、产品属性、明示表和或有费用披露判断应带evidence，field使用facts内路径如loan.principal或fees[0].amount。quote必须逐字存在于指定document_id和page的原文，不要用省略号或改写。id唯一。跨文档冲突写conflicts:{field,description,evidence_ids}，对应事实填null/unknown等用户确认。questions仅问用户能回答的事实。没有证据就保留未知，不要为了填满JSON猜测。`;
     const content = JSON.stringify({ context: context ?? {}, materials });
-    let raw = await this.json(instruction, content, signal, progress);
+    const retryBudget = { remaining: 1 };
+    let raw = await this.json(instruction, content, signal, progress, undefined, undefined, retryBudget);
     let parsed = caseExtractionSchema.safeParse(raw);
-    if (!parsed.success) {
+    if (!parsed.success && retryBudget.remaining > 0) {
       const issues = parsed.error.issues.slice(0, 15).map(issue => ({ path: issue.path.join('.'), message: issue.message }));
-      raw = await this.json(instruction + '\n上次结果未通过格式校验，请纠正这些字段的类型并重新忠实抽取：' + JSON.stringify(issues) + '。所有金额与利率都必须加双引号，不能是JSON数字；不要新增模板以外的键。', content, signal, progress);
+      retryBudget.remaining--;
+      raw = await this.json(instruction + '\n上次结果未通过格式校验，请纠正这些字段的类型并重新忠实抽取：' + JSON.stringify(issues) + '。所有金额与利率都必须加双引号，不能是JSON数字；不要新增模板以外的键。', content, signal, progress, undefined, undefined, retryBudget);
       parsed = caseExtractionSchema.safeParse(raw);
     }
     if (!parsed.success) throw new AppError('MODEL_INVALID_FIELDS', '业务事实抽取未通过结构校验，请重试或手工录入。', 502,

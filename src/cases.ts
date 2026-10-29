@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import type { z } from 'zod';
 import { commandSchema } from './contracts.ts';
 import { caseFactsSchema, type CaseExtraction, type CaseFacts, type LoanResult, type RuleResult, type SourceMaterial } from './domain.ts';
+import { normalizeCaseFacts } from './facts.ts';
 import type { Config } from './config.ts';
 import { AppError } from './errors.ts';
 import { CaseModel } from './case-model.ts';
@@ -110,6 +111,7 @@ export class CaseWorkflow {
         : await this.model.extract(materials, command.context, signal, progress('extract_case'));
       if (typeof command.context?.is_student === 'boolean') extraction.facts.borrower.is_student = command.context.is_student;
       if (command.context?.purpose && command.context.purpose !== 'unknown') extraction.facts.borrower.purpose = command.context.purpose;
+      extraction.facts = normalizeCaseFacts(extraction.facts);
       checkpoint();
       const record: CaseRecord = { id: randomUUID(), revision: 0, status: 'review', original: structuredClone(extraction.facts), facts: structuredClone(extraction.facts), extraction, materials, history: [], report: null, lender_search: null,activities:pending,checked:null };
       activeRecord=record;
@@ -144,7 +146,7 @@ export class CaseWorkflow {
       return;
     }
     if (command.type === 'case.confirm') {
-      const facts = caseFactsSchema.parse(command.facts);
+      const facts = normalizeCaseFacts(caseFactsSchema.parse(command.facts));
       const duplicateFees = new Set(facts.fees.map(f => f.id)).size !== facts.fees.length;
       if (duplicateFees) throw new AppError('DUPLICATE_FEE', '费用编号重复，请核对费用清单。');
       record.history.push({ revision: record.revision + 1, confirmed_at: new Date().toISOString(), changes: differences(record.facts, facts) });

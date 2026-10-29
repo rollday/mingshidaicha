@@ -94,6 +94,7 @@ summary与每项解释要具体对应输入，给用户易懂的中文。仅当c
   let mode: 'ai' | 'template' = 'ai';
   let generationError: string | null = null;
   let attempts = 0;
+  const retryBudget = { remaining: 1 };
   const sections=(raw:string)=>reportPrefix(raw).flatMap(section=>{
     if(section.rule_id!==undefined && section.rule_id!==null && !input.rules.some(rule=>rule.rule_id===section.rule_id && ['triggered','insufficient_data'].includes(rule.status)))return [];
     const text=section.text.replace(/\{[^}]*$/,'');
@@ -111,7 +112,11 @@ summary与每项解释要具体对应输入，给用户易懂的中文。仅当c
       if(signal.aborted)return;
       raw+=delta;
       if(Date.now()-last>=120){last=Date.now();live?.({attempt:attempts,status:'streaming',sections:sections(raw)});}
-    });
+    },()=>{
+      raw='';last=0;
+      live?.({attempt:attempts,status:'retrying',sections:[]});
+      attempts++;
+    },retryBudget);
     live?.({attempt:attempts,status:'validating',sections:sections(raw)});
     return result;
   };
@@ -122,6 +127,8 @@ summary与每项解释要具体对应输入，给用户易懂的中文。仅当c
     try { writing = validateWriting(raw, input, values); }
     catch (error) {
       if (!(error instanceof AppError) || !error.code.startsWith('REPORT_')) throw error;
+      if (retryBudget.remaining <= 0) throw error;
+      retryBudget.remaining--;
       live?.({attempt:attempts,status:'retrying',sections:[]});
       raw = await request(system + '\n上次报告未通过后端校验，错误为' + error.code + '。请重新撰写：仅使用当前提供的规则ID，每个触发项必须覆盖；正文中的所有数字（包括用户修正前后的金额）只能用allowed_tokens里的完整占位符，不得直接书写。不得添加法条号、URL、法律定性。',content);
       writing = validateWriting(raw, input, values);

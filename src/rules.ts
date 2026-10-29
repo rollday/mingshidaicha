@@ -240,7 +240,7 @@ export function evaluateRules(
         ? 'insufficient_data'
         : 'insufficient_data',
   facts.disclosure.contingent_disclosed === false
-    ? '事实明确显示违约等或有成本未披露。'
+    ? '当前事实标记或有成本未披露；完整明示表没有或有成本行时也按此默认，请核对材料。'
     : facts.disclosure.contingent_disclosed === true
       ? '事实标记或有成本披露完整；本规则未发现明确缺失。'
       : '或有成本披露情况未知；或有费用不作为正常履约费用触发红色费用提示。',
