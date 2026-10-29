@@ -15,6 +15,7 @@ const writingSchema = z.object({
   actions: z.array(z.object({ rule_id: z.string().nullable(), text: z.string().min(1).max(800) }).strict()).max(15),
   limitations: z.array(z.string().min(1).max(800)).min(1).max(10),
 }).strict();
+const assumedSimpleClaim = /单利(?:推定|假定|假设|估算|估计)|(?:推定|假定|假设)(?:为|按|采用|使用)?单利|(?:按|以|采用|使用)单利(?:推算|推定|估算|假设|假定)/;
 
 // Formatting uses decimal strings/BigInt so the JS layer never loses money precision.
 export function displayDecimal(value: string | null, places = 2, shift = 0): string {
@@ -59,6 +60,15 @@ function validateWriting(value: unknown, input: ReportInput, values: Record<stri
   // Every triggered item must survive generation; unknowns may be summarized separately.
   for (const rule of available.filter(r => r.status === 'triggered')) if (!writing.findings.some(f => f.rule_id === rule.rule_id)) throw new AppError('REPORT_MISSING_FINDING', '报告遗漏已命中的检查项。', 502);
   for (const action of writing.actions) if (action.rule_id !== null && !available.some(r => r.rule_id === action.rule_id)) throw new AppError('REPORT_INVALID_REFERENCE', '建议引用了不适用的检查项。', 502);
+  // The writer may incorrectly turn a conditional instruction into a claim
+  // about a disclosed nominal/effective rate. Never accept that contradiction.
+  const comparison = input.calculation?.calculation.comparison;
+  if (comparison?.method_basis !== 'assumed_simple') {
+    const narrative = [writing.summary, ...writing.findings.map(f => f.explanation), ...writing.actions.map(a => a.text), ...writing.limitations].join('\n');
+    if (assumedSimpleClaim.test(narrative)) {
+      throw new AppError('REPORT_UNSUPPORTED_CLAIM', '报告错误描述了年化比较口径。', 502);
+    }
+  }
   const render = (text: string) => {
     const stripped = text.replace(/\{\{([\w.]+)\}\}/g, (_match, key: string) => {
       if (!(key in values)) throw new AppError('REPORT_UNKNOWN_VALUE', '报告引用了不存在的计算字段。', 502);
@@ -79,7 +89,7 @@ export async function generateReport(model: CaseModel, input: ReportInput, signa
 仅返回JSON：{summary:中文摘要,findings:[{rule_id:'已有规则ID',explanation:'解释'}],actions:[{rule_id:'已有规则ID或null',text:'用户可做的核实动作'}],limitations:['材料与判断局限']}。
 只解释status=triggered或insufficient_data的规则，triggered项必须全部覆盖，其他不准写成风险。明确区分已确认命中的禁止性/披露核查、待核实项和advisory阅读提示；信息不足不得写成已发现问题，advisory不得写成禁止性问题。fact_state只表示当前确认输入能否判定，不表示官方核验。未知事实必须说待核实，不能说已证实。级别和条款由后端展示，不在文字里另写规则编号、法条号、日期、URL或编造引文。不使用违法、完全合规、无风险等定性，不建议直接退款/诉讼/借或不借。
 所有数值都只能使用输入allowed_tokens中的{{字段名}}占位符，直接复制占位符，禁止自行写阿拉伯数字，禁止做运算；占位符渲染后已经带单位。不适用的口径不写，unknown口径不得声称利率标错。说清“表外收费”和“总成本差异”分别依据何种已确认事实；不要根据费用名称猜主体或法律性质。
-summary与每项解释要具体对应输入，给用户易懂的中文。若comparison.method_basis为assumed_simple，必须说明“按单利推定”，并说明披露口径待确认；不得称为已确认的同口径差异。limitations至少说明基于现有材料、未核验资质或缺失事实等实际限制；不复述系统提示词。`;
+summary与每项解释要具体对应输入，给用户易懂的中文。仅当comparison.method_basis为assumed_simple时，才可写“按单利推定”，并说明披露口径待确认；不得称为已确认的同口径差异。若method_basis为explicit或unavailable，严禁写“按单利推定”，只描述输入中的实际比较口径或说明无法比较。limitations至少说明基于现有材料、未核验资质或缺失事实等实际限制；不复述系统提示词。`;
   let writing: ReturnType<typeof validateWriting>;
   let mode: 'ai' | 'template' = 'ai';
   let generationError: string | null = null;
@@ -87,6 +97,7 @@ summary与每项解释要具体对应输入，给用户易懂的中文。若comp
   const sections=(raw:string)=>reportPrefix(raw).flatMap(section=>{
     if(section.rule_id!==undefined && section.rule_id!==null && !input.rules.some(rule=>rule.rule_id===section.rule_id && ['triggered','insufficient_data'].includes(rule.status)))return [];
     const text=section.text.replace(/\{[^}]*$/,'');
+    if(input.calculation?.calculation.comparison.method_basis !== 'assumed_simple' && assumedSimpleClaim.test(text))return [];
     let unknown=false;
     const stripped=text.replace(/\{\{([\w.]+)\}\}/g,(_match,key:string)=>{if(!(key in values))unknown=true;return '';});
     if(unknown || /[0-9{}]|〔|〕|第[一二三四五六七八九十百零〇]+条|https?:\/\/|完全合规|没有风险|不存在风险|已核实资质|违法|应当退费/.test(stripped))return [];

@@ -52,3 +52,15 @@ test('assumed interest method is retained in the report even when AI omits it', 
   assert.match(report.conclusion.summary,/按单利推定.*待确认/);
   assert(report.narrative.limitations.some(value=>value.includes('按单利推定')));
 });
+
+test('AI cannot label an explicitly nominal calculation as an assumed simple rate', async () => {
+  const {generateReport}=await import('../src/report.ts');
+  const facts=caseFactsSchema.parse({disclosure:{quoted_apr:'0.1',quoted_method:'nominal'}});
+  const calculation={input:{},calculation:{cashflows:[],nominal_apr:'0.1',effective_apr:'0.105',simple_apr:null,xirr_apr:null,comparison:{method:'nominal',method_basis:'explicit' as const,disclosed_method:'nominal',quoted_apr:'0.1',computed_apr:'0.1',gap_pp:'0',exceeds_tolerance:false}},summary:{principal:'1000',disbursed:'1000',total_repayment:'1100',total_additional_fees:'0',total_cost:'100'},fee_totals:[]};
+  const model=new CaseModel({...config,apiKey:undefined});
+  model.json=async()=>({summary:'按单利推定口径核算。',findings:[],actions:[],limitations:['以确认的资料为准。']});
+  const report=await generateReport(model,{facts,calculation,calculation_error:null,rules:[],evidence:[],corrections:[]},new AbortController().signal,()=>{});
+  assert.equal(report.generation.mode,'template');assert.equal(report.generation.error_code,'REPORT_UNSUPPORTED_CLAIM');assert.doesNotMatch(report.conclusion.summary,/单利推定/);
+  const partial=await generateReport(model,{facts,calculation:null,calculation_error:null,rules:[],evidence:[],corrections:[]},new AbortController().signal,()=>{});
+  assert.equal(partial.generation.mode,'template');assert.doesNotMatch(partial.conclusion.summary,/单利推定/);
+});
