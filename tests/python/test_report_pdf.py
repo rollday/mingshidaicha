@@ -76,6 +76,34 @@ class ReportPdfTests(unittest.TestCase):
         self.assertIn("披露口径待确认", text)
         document.close()
 
+    def test_first_page_highlights_comparison_cost_and_actions_without_conflating_fees(self):
+        document = fitz.open(stream=create_report_pdf(sample_payload()), filetype="pdf")
+        first_page = document[0].get_text()
+        self.assertIn("10.60%", first_page)
+        self.assertIn("还款计划合计", first_page)
+        self.assertIn("另付费用单列", first_page)
+        self.assertIn("独立支付费用合计", first_page)
+        self.assertIn("我该怎么办", first_page)
+        self.assertIn("核对模拟披露方式与还款计划", first_page)
+        full_text = "\n".join(page.get_text() for page in document)
+        self.assertIn("信息不足不等于已发现问题", full_text)
+        self.assertIn("表格栏目齐全", full_text)
+        document.close()
+
+    def test_short_actions_keep_their_rule_reference_on_the_same_page(self):
+        payload = sample_payload()
+        payload["report"]["narrative"]["actions"] = [
+            {"rule_id": "R02", "text": f"模拟核实动作编号{index:02d}。"}
+            for index in range(1, 26)
+        ]
+        document = fitz.open(stream=create_report_pdf(payload), filetype="pdf")
+        page_texts = [page.get_text() for page in document]
+        for index in range(1, 26):
+            marker = f"模拟核实动作编号{index:02d}。"
+            page = next(text for text in page_texts if marker in text)
+            self.assertIn("对应依据：R02", page.split(marker, 1)[1])
+        document.close()
+
 
 if __name__ == "__main__":
     unittest.main()

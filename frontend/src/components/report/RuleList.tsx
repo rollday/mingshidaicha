@@ -20,8 +20,13 @@ function scrollRuleIntoView(target: HTMLElement) {
 }
 
 export function RuleList({ report }: { report: AuditReport }) {
-  const [expandedRuleIds, setExpandedRuleIds] = useState(() => new Set(report.rules.filter((rule) => rule.status === 'triggered').map((rule) => rule.rule_id)));
+  const [expandedRuleIds, setExpandedRuleIds] = useState(() => new Set(report.rules.filter((rule) => rule.status === 'triggered' || rule.status === 'insufficient_data').map((rule) => rule.rule_id)));
+  const [otherRulesOpen, setOtherRulesOpen] = useState(false);
   const [pendingRuleId, setPendingRuleId] = useState<string | null>(null);
+  const visibleByDefault = report.rules.filter((rule) => rule.status === 'triggered' || rule.status === 'insufficient_data');
+  const foldedRules = report.rules.filter((rule) => rule.status === 'not_triggered' || rule.status === 'not_applicable');
+  const notTriggeredCount = foldedRules.filter((rule) => rule.status === 'not_triggered').length;
+  const notApplicableCount = foldedRules.filter((rule) => rule.status === 'not_applicable').length;
 
   const navigateFromLocation = useCallback(() => {
     const ruleIds = new Set(report.rules.map((rule) => rule.rule_id));
@@ -30,12 +35,15 @@ export function RuleList({ report }: { report: AuditReport }) {
       setPendingRuleId(null);
       return;
     }
+    const targetRule = report.rules.find((rule) => rule.rule_id === ruleId);
+    if (targetRule?.status === 'not_triggered' || targetRule?.status === 'not_applicable') setOtherRulesOpen(true);
     setExpandedRuleIds((current) => addExpandedRule(current, ruleId));
     setPendingRuleId(ruleId);
   }, [report.rules]);
 
   useEffect(() => {
-    setExpandedRuleIds(new Set(report.rules.filter((rule) => rule.status === 'triggered').map((rule) => rule.rule_id)));
+    setExpandedRuleIds(new Set(report.rules.filter((rule) => rule.status === 'triggered' || rule.status === 'insufficient_data').map((rule) => rule.rule_id)));
+    setOtherRulesOpen(false);
   }, [report.rules]);
 
   useEffect(() => {
@@ -65,12 +73,30 @@ export function RuleList({ report }: { report: AuditReport }) {
       });
     });
     return () => window.cancelAnimationFrame(frame);
-  }, [expandedRuleIds, pendingRuleId]);
+  }, [expandedRuleIds, otherRulesOpen, pendingRuleId]);
 
   return (
     <section id="report-rules" className="flex flex-col gap-4">
-      <header className="flex flex-col gap-1"><h2 className="text-lg font-medium">规则检查</h2><p className="text-sm text-mute">逐项展示检查结果、依据和可以进一步核实的动作。</p></header>
-      {report.rules.length ? <div className="flex flex-col gap-3">{report.rules.map((rule) => <RuleItem key={rule.rule_id} rule={rule} report={report} open={expandedRuleIds.has(rule.rule_id)} onToggle={() => setExpandedRuleIds((current) => toggleExpandedRule(current, rule.rule_id))} />)}</div> : <Card><p className="text-sm text-mute">报告中没有规则检查结果。</p></Card>}
+      <header className="flex flex-col gap-1"><h2 className="text-lg font-medium">依据与核查结果</h2><p className="text-sm text-mute">已命中和待核实项默认展开；未命中与不适用项收在同一折叠区。</p></header>
+      {report.rules.length ? (
+        <div className="flex flex-col gap-3">
+          {visibleByDefault.map((rule) => <RuleItem key={rule.rule_id} rule={rule} report={report} open={expandedRuleIds.has(rule.rule_id)} onToggle={() => setExpandedRuleIds((current) => toggleExpandedRule(current, rule.rule_id))} />)}
+          {foldedRules.length ? (
+            <div className="scroll-mt-20">
+              <AccordionCard
+                title={<span className="flex min-w-0 flex-wrap items-baseline gap-x-3 gap-y-1"><span>其他规则</span><span className="text-sm font-normal text-mute">未命中 {notTriggeredCount} 条 · 不适用 {notApplicableCount} 条</span></span>}
+                open={otherRulesOpen}
+                onToggle={() => setOtherRulesOpen((open) => !open)}
+                dense
+              >
+                <div className="flex flex-col gap-3">
+                  {foldedRules.map((rule) => <RuleItem key={rule.rule_id} rule={rule} report={report} open={expandedRuleIds.has(rule.rule_id)} onToggle={() => setExpandedRuleIds((current) => toggleExpandedRule(current, rule.rule_id))} />)}
+                </div>
+              </AccordionCard>
+            </div>
+          ) : null}
+        </div>
+      ) : <Card><p className="text-sm text-mute">报告中没有规则检查结果。</p></Card>}
     </section>
   );
 }
@@ -78,11 +104,12 @@ export function RuleList({ report }: { report: AuditReport }) {
 function RuleItem({ rule, report, open, onToggle }: { rule: RuleResult; report: AuditReport; open: boolean; onToggle: () => void }) {
   const presentation = rulePresentation(rule);
   const evidence = [...new Map(report.evidence.filter((item) => rule.evidence_ids.includes(item.id)).map(item => [JSON.stringify([item.document_id,item.page,item.quote]),item])).values()];
+  const statusLabel = rule.status === 'insufficient_data' ? '待核实 · 信息不足' : presentation.label;
   return (
     <div id={ruleAnchorId(rule.rule_id)} className="scroll-mt-20">
-      <AccordionCard title={<span className="flex flex-wrap items-center gap-2"><Tag tone={presentation.tone as Tone}>{presentation.label}</Tag><Tag tone="neutral">{presentation.natureLabel}</Tag><span>{rule.rule_id} {rule.title}</span></span>} open={open} onToggle={onToggle} dense>
+      <AccordionCard title={<span className="flex flex-wrap items-center gap-2"><Tag tone={presentation.tone as Tone}>{statusLabel}</Tag><Tag tone="neutral">{presentation.natureLabel}</Tag><span>{rule.rule_id} {rule.title}</span></span>} open={open} onToggle={onToggle} dense>
         <div className="flex flex-col gap-4">
-          <div className="flex flex-wrap gap-2"><Tag tone={presentation.tone as Tone}>{presentation.label}</Tag>{presentation.levelLabel && presentation.levelLabel !== presentation.natureLabel ? <Tag tone={presentation.tone as Tone}>{presentation.levelLabel}</Tag> : null}<Tag tone="neutral">{presentation.natureLabel}</Tag><span className="self-center text-xs text-mute">{presentation.factLabel} · 规则 {rule.rule_id}</span></div>
+          <div className="flex flex-wrap gap-2">{presentation.levelLabel && rule.status !== 'insufficient_data' ? <Tag tone={presentation.tone as Tone}>{presentation.levelLabel}</Tag> : null}<Tag tone="neutral">{presentation.natureLabel}</Tag><span className="self-center text-xs text-mute">{presentation.factLabel} · 规则 {rule.rule_id}</span></div>
           <p className="whitespace-pre-wrap text-sm leading-relaxed">{rule.reason}</p>
           {rule.action ? <Card inset tone="blue"><p className="text-sm"><span className="font-medium">可以核实：</span>{rule.action}</p></Card> : null}
           {rule.citation ? (

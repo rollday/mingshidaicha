@@ -17,6 +17,7 @@ from reportlab.lib.styles import ParagraphStyle
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.lib.units import mm
+from reportlab.pdfgen.canvas import Canvas
 from reportlab.platypus import HRFlowable, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 
 try:
@@ -29,9 +30,9 @@ _FONT_PATH = Path("/usr/share/fonts/truetype/arphic/uming.ttc")
 _REGULAR = "Arphic-UMing"
 _BOLD = _REGULAR
 _FONTS_READY = False
-_INK = colors.HexColor("#20334A")
-_MUTED = colors.HexColor("#5D6B7C")
-_LINE = colors.HexColor("#D9E1E9")
+_INK = colors.HexColor("#111A24")
+_MUTED = colors.HexColor("#3A4656")
+_LINE = colors.HexColor("#8A948F")
 _PALE = colors.HexColor("#F3F6F9")
 _BLUE = colors.HexColor("#285F91")
 
@@ -169,22 +170,24 @@ def _styles() -> dict[str, ParagraphStyle]:
     return {
         "title": ParagraphStyle("ReportTitle", fontName=_BOLD, fontSize=21, leading=28, textColor=_INK, spaceAfter=5, wordWrap="CJK"),
         "subtitle": ParagraphStyle("ReportSubtitle", fontName=_REGULAR, fontSize=8.5, leading=12, textColor=_MUTED, spaceAfter=9, wordWrap="CJK"),
-        "section": ParagraphStyle("ReportSection", fontName=_BOLD, fontSize=12.5, leading=17, textColor=_INK, spaceBefore=8, spaceAfter=5, keepWithNext=1, wordWrap="CJK"),
-        "subsection": ParagraphStyle("ReportSubsection", fontName=_BOLD, fontSize=10.2, leading=14, textColor=_INK, spaceBefore=5, spaceAfter=3, keepWithNext=1, wordWrap="CJK"),
-        "body": ParagraphStyle("ReportBody", fontName=_REGULAR, fontSize=9, leading=13.5, textColor=_INK, spaceAfter=4, wordWrap="CJK", splitLongWords=1),
-        "small": ParagraphStyle("ReportSmall", fontName=_REGULAR, fontSize=7.8, leading=11, textColor=_MUTED, spaceAfter=3, wordWrap="CJK", splitLongWords=1),
-        "label": ParagraphStyle("ReportLabel", fontName=_BOLD, fontSize=8.5, leading=12, textColor=_MUTED, wordWrap="CJK"),
-        "value": ParagraphStyle("ReportValue", fontName=_REGULAR, fontSize=8.5, leading=12, textColor=_INK, wordWrap="CJK", splitLongWords=1),
-        "table_header": ParagraphStyle("ReportTableHeader", fontName=_BOLD, fontSize=7.6, leading=10, textColor=colors.white, wordWrap="CJK"),
-        "callout": ParagraphStyle("ReportCallout", fontName=_REGULAR, fontSize=9, leading=14, textColor=_INK, spaceAfter=2, wordWrap="CJK", splitLongWords=1),
+        "section": ParagraphStyle("ReportSection", fontName=_BOLD, fontSize=13, leading=18, textColor=_INK, spaceBefore=8, spaceAfter=5, keepWithNext=1, wordWrap="CJK"),
+        "subsection": ParagraphStyle("ReportSubsection", fontName=_BOLD, fontSize=10.5, leading=15, textColor=_INK, spaceBefore=5, spaceAfter=3, keepWithNext=1, wordWrap="CJK"),
+        "body": ParagraphStyle("ReportBody", fontName=_REGULAR, fontSize=10.5, leading=15.5, textColor=_INK, spaceAfter=5, wordWrap="CJK", splitLongWords=1),
+        "small": ParagraphStyle("ReportSmall", fontName=_REGULAR, fontSize=8, leading=11.5, textColor=_MUTED, spaceAfter=3, wordWrap="CJK", splitLongWords=1),
+        "label": ParagraphStyle("ReportLabel", fontName=_BOLD, fontSize=9, leading=12.5, textColor=_MUTED, wordWrap="CJK"),
+        "value": ParagraphStyle("ReportValue", fontName=_REGULAR, fontSize=9, leading=12.5, textColor=_INK, wordWrap="CJK", splitLongWords=1),
+        "table_header": ParagraphStyle("ReportTableHeader", fontName=_BOLD, fontSize=8, leading=10.5, textColor=colors.white, wordWrap="CJK"),
+        "callout": ParagraphStyle("ReportCallout", fontName=_REGULAR, fontSize=11, leading=16, textColor=_INK, backColor=_PALE, borderColor=_LINE, borderWidth=0.6, borderPadding=8, spaceAfter=8, wordWrap="CJK", splitLongWords=1),
     }
 
 
 def _section(story: list[Any], title: str, styles: dict[str, ParagraphStyle]) -> None:
+    divider = HRFlowable(width="100%", thickness=0.7, color=_LINE, spaceBefore=0, spaceAfter=7)
+    divider.keepWithNext = 1
     story.extend([
         Spacer(1, 4),
         _paragraph(title, styles["section"]),
-        HRFlowable(width="100%", thickness=0.7, color=_LINE, spaceBefore=0, spaceAfter=7),
+        divider,
     ])
 
 
@@ -226,7 +229,7 @@ def _method(value: Any) -> str:
     return _METHODS.get(key, "口径待确认")
 
 
-def _append_facts(story: list[Any], report: dict[str, Any], styles: dict[str, ParagraphStyle], width: float) -> None:
+def _append_facts(story: list[Any], report: dict[str, Any], styles: dict[str, ParagraphStyle]) -> None:
     facts = report.get("facts") if isinstance(report.get("facts"), dict) else {}
     borrower = facts.get("borrower") if isinstance(facts.get("borrower"), dict) else {}
     lender = facts.get("lender") if isinstance(facts.get("lender"), dict) else {}
@@ -253,15 +256,18 @@ def _append_facts(story: list[Any], report: dict[str, Any], styles: dict[str, Pa
         ("单期约定还款", _money(loan.get("period_payment"))),
         ("约定开始日期", _plain(loan.get("start_date"))),
         ("披露年化", f"{_percent(disclosure.get('quoted_apr'))}（{quoted_method}）"),
-        ("披露信息状态", f"明示表：{_tri(disclosure.get('present'))}；项目齐全：{_tri(disclosure.get('items_complete'))}；或有费用披露：{_tri(disclosure.get('contingent_disclosed'))}"),
+        ("披露信息状态", f"明示表：{_tri(disclosure.get('present'))}；表格栏目齐全：{_tri(disclosure.get('items_complete'))}；或有费用披露：{_tri(disclosure.get('contingent_disclosed'))}"),
         ("资金流向", {"borrower": "借款人", "training_provider": "培训机构", "third_party": "第三方", "unknown": "待确认"}.get(_plain(facts.get("funds_to"), fallback="unknown", maximum=50), "待确认")),
     ]
-    _section(story, "关键事实", styles)
-    story.append(_label_table(rows, styles, width))
+    _section(story, "贷款信息与相关主体", styles)
+    for label, value in rows:
+        safe_label = escape(_plain(label, maximum=300))
+        safe_value = escape(_plain(value, maximum=12000))
+        story.append(Paragraph(f"<b>{safe_label}：</b>{safe_value}", styles["body"]))
 
 
 def _append_calculation(story: list[Any], report: dict[str, Any], styles: dict[str, ParagraphStyle], width: float) -> None:
-    _section(story, "年化与成本计算", styles)
+    _section(story, "年化与核心费用", styles)
     calculation = report.get("calculation")
     if not isinstance(calculation, dict):
         error = report.get("calculation_error") if isinstance(report.get("calculation_error"), dict) else {}
@@ -271,14 +277,6 @@ def _append_calculation(story: list[Any], report: dict[str, Any], styles: dict[s
         return
 
     results = calculation.get("calculation") if isinstance(calculation.get("calculation"), dict) else {}
-    rates = [
-        ["名义年化", _percent(results.get("nominal_apr"))],
-        ["复利年化", _percent(results.get("effective_apr"))],
-        ["到期单利年化", _percent(results.get("simple_apr"))],
-        ["按实际日期年化", _percent(results.get("xirr_apr"))],
-    ]
-    story.append(_data_table(["计算口径", "结果"], rates, [width * 0.42, width * 0.58], styles))
-
     comparison = results.get("comparison") if isinstance(results.get("comparison"), dict) else {}
     method = _plain(comparison.get("method_label"), fallback=_method(comparison.get("method")), maximum=100)
     method_basis = comparison.get("method_basis")
@@ -303,12 +301,14 @@ def _append_calculation(story: list[Any], report: dict[str, Any], styles: dict[s
     ]
     story.append(Spacer(1, 5))
     story.append(_label_table(comparison_rows, styles, width))
+    if tolerance is not None:
+        story.append(_paragraph("比较容差是本工具设置的提示门槛，不是违法认定标准。", styles["small"]))
 
     summary = calculation.get("summary") if isinstance(calculation.get("summary"), dict) else {}
     totals = [
         ["借款本金", _money(summary.get("principal"))],
         ["实际到账", _money(summary.get("disbursed"))],
-        ["还款总额", _money(summary.get("total_repayment"))],
+        ["还款计划合计（另付费用单列）", _money(summary.get("total_repayment"))],
         ["独立支付费用合计", _money(summary.get("total_additional_fees"))],
         ["总成本", _money(summary.get("total_cost"))],
     ]
@@ -318,17 +318,37 @@ def _append_calculation(story: list[Any], report: dict[str, Any], styles: dict[s
     story.append(_paragraph("计算沿用报告中的到账、还款和费用现金流口径；已包含在到账或还款金额中的费用不会重复计入。具体费用纳入状态见费用明细。", styles["small"]))
 
 
-def _append_fees(story: list[Any], report: dict[str, Any], styles: dict[str, ParagraphStyle], width: float) -> None:
+def _append_other_rates(story: list[Any], report: dict[str, Any], styles: dict[str, ParagraphStyle], width: float) -> None:
+    calculation = report.get("calculation")
+    if not isinstance(calculation, dict):
+        return
+    results = calculation.get("calculation") if isinstance(calculation.get("calculation"), dict) else {}
+    comparison = results.get("comparison") if isinstance(results.get("comparison"), dict) else {}
+    rate_keys = [("nominal", "nominal_apr", "名义年化"), ("effective", "effective_apr", "复利年化"),
+                 ("simple", "simple_apr", "到期单利年化"), ("xirr", "xirr_apr", "按实际日期年化")]
+    rates = []
+    for method, key, label in rate_keys:
+        # The selected comparison is already shown at the start of the report.
+        if (comparison.get("method") == method and
+                _number(results.get(key)) == _number(comparison.get("computed_apr")) and
+                (results.get(key) is not None or comparison.get("computed_apr") is None)):
+            continue
+        rates.append([label, _percent(results.get(key))])
+    if rates:
+        _section(story, "其他年化口径", styles)
+        story.append(_data_table(["报告列示的年化结果", "数值"], rates, [width * 0.42, width * 0.58], styles))
+
+
+def _append_fees(story: list[Any], report: dict[str, Any], styles: dict[str, ParagraphStyle]) -> None:
     _section(story, "费用明细", styles)
     facts = report.get("facts") if isinstance(report.get("facts"), dict) else {}
     fees = facts.get("fees") if isinstance(facts.get("fees"), list) else []
     if not fees:
-        story.append(_paragraph("没有已确认的费用项目。", styles["body"]))
+        story.append(_paragraph("报告未提供已确认的费用明细。", styles["body"]))
         return
     calculation = report.get("calculation") if isinstance(report.get("calculation"), dict) else {}
     fee_totals = calculation.get("fee_totals") if isinstance(calculation.get("fee_totals"), list) else []
     totals_by_id = {str(item.get("id")): item for item in fee_totals if isinstance(item, dict) and item.get("id") is not None}
-    rows: list[list[Any]] = []
     for fee in fees[:100]:
         if not isinstance(fee, dict):
             continue
@@ -339,15 +359,12 @@ def _append_fees(story: list[Any], report: dict[str, Any], styles: dict[str, Par
         payee_type = _PAYEE_TYPES.get(_plain(fee.get("payee_type"), fallback="unknown", maximum=50), "主体待确认")
         timing = _FEE_TIMING.get(_plain(fee.get("timing"), fallback="unknown", maximum=50), "时间待确认")
         details = f"收取主体：{_plain(fee.get('payee'))}（{payee_type}）；发生时间：{timing}；是否或有：{_tri(contingent)}；明示表：{_tri(fee.get('in_disclosure'))}；已计入现金流：{_tri(fee.get('included_in_cashflows'))}；已计入明示成本：{_tri(fee.get('included_in_disclosed_cost'))}"
-        rows.append([
-            _paragraph(fee.get("name"), styles["value"], maximum=300),
-            _paragraph(_money(fee.get("amount")), styles["value"]),
-            _paragraph(total_text, styles["value"]),
-            _paragraph(details, styles["small"], maximum=1000),
-        ])
-    if rows:
-        story.append(_data_table(["费用项目", "单次金额", "核算合计", "主体、发生条件与披露状态"], rows,
-                                 [width * 0.17, width * 0.14, width * 0.16, width * 0.53], styles))
+        story.append(_paragraph(
+            f"{_plain(fee.get('name'), maximum=300)}：单次金额 {_money(fee.get('amount'))}；报告核算合计 {total_text}",
+            styles["subsection"],
+            maximum=1200,
+        ))
+        story.append(_paragraph(details, styles["body"], maximum=2400))
     story.append(Spacer(1, 5))
     story.append(_paragraph("或有费用单独列示，不自动计入常规成本合计；是否属于借款成本应结合合同约定、实际支付和适用规则核对。", styles["small"]))
 
@@ -384,7 +401,7 @@ def _append_lender_sources(story: list[Any], report: dict[str, Any], styles: dic
 
 
 def _append_rules(story: list[Any], report: dict[str, Any], payload: dict[str, Any], styles: dict[str, ParagraphStyle]) -> None:
-    _section(story, "规则检查", styles)
+    _section(story, "依据", styles)
     rules = report.get("rules") if isinstance(report.get("rules"), list) else []
     if not rules:
         story.append(_paragraph("报告中没有规则检查结果。", styles["body"]))
@@ -398,10 +415,16 @@ def _append_rules(story: list[Any], report: dict[str, Any], payload: dict[str, A
             continue
         rule_id = _plain(rule.get("rule_id"), maximum=100)
         presentation = presentation_by_id.get(rule_id, {})
-        status = _plain(presentation.get("label"), fallback=_RULE_STATUS.get(_plain(rule.get("status"), fallback="", maximum=40), "状态待确认"), maximum=80)
+        raw_status = _plain(rule.get("status"), fallback="", maximum=40)
+        expected_status = _RULE_STATUS.get(raw_status)
+        status = _plain(presentation.get("label"), fallback=expected_status or "状态待确认", maximum=80)
         nature = _plain(presentation.get("natureLabel"), fallback=_RULE_NATURE.get(_plain(rule.get("nature"), fallback="", maximum=40), "核查项目"), maximum=80)
         title = _plain(rule.get("title"), maximum=500)
         story.append(_paragraph(f"{status}；{nature}；{rule_id} {title}", styles["subsection"]))
+        presentation_status = _plain(presentation.get("label"), fallback=expected_status or "状态待确认", maximum=80)
+        compact_status = raw_status in {"not_triggered", "not_applicable"} and presentation_status == expected_status
+        if compact_status:
+            continue
         level = _plain(presentation.get("levelLabel"), fallback="", maximum=80)
         fact_state = _plain(presentation.get("factLabel"), fallback="", maximum=100)
         metadata = "；".join(value for value in (level, fact_state) if value)
@@ -453,39 +476,51 @@ def _correction_value(field: str, value: Any) -> str:
     return text
 
 
-def _append_actions_and_limits(story: list[Any], report: dict[str, Any], styles: dict[str, ParagraphStyle], width: float) -> None:
+def _append_actions(story: list[Any], report: dict[str, Any], styles: dict[str, ParagraphStyle]) -> None:
     narrative = report.get("narrative") if isinstance(report.get("narrative"), dict) else {}
-    _section(story, "签字前可以做的事", styles)
+    _section(story, "我该怎么办", styles)
     actions = narrative.get("actions") if isinstance(narrative.get("actions"), list) else []
+    rules = report.get("rules") if isinstance(report.get("rules"), list) else []
+    titles_by_id = {
+        str(rule.get("rule_id")): _plain(rule.get("title"), fallback="", maximum=500)
+        for rule in rules
+        if isinstance(rule, dict) and rule.get("rule_id") is not None
+    }
     if actions:
         for index, action in enumerate(actions[:100], 1):
             if not isinstance(action, dict):
                 continue
             reference = action.get("rule_id")
-            suffix = f"（对应规则：{_plain(reference, maximum=100)}）" if reference else ""
-            story.append(_paragraph(f"{index}. {_plain(action.get('text'), maximum=1600)}{suffix}", styles["body"], maximum=1800))
+            action_paragraph = _paragraph(f"{index}. {_plain(action.get('text'), maximum=12000)}", styles["body"], maximum=12500)
+            if reference is not None:
+                action_paragraph.keepWithNext = 1
+            story.append(action_paragraph)
+            if reference is not None:
+                reference_id = _plain(reference, maximum=100)
+                reference_title = titles_by_id.get(str(reference), "")
+                reference_text = f"对应依据：{reference_id} {reference_title}".strip()
+                story.append(_paragraph(reference_text, styles["small"], maximum=700))
     else:
-        story.append(_paragraph("报告没有列出额外核实动作。", styles["body"]))
+        story.append(_paragraph("报告未提供单独的行动建议。", styles["body"]))
 
+
+def _append_report_limits(story: list[Any], report: dict[str, Any], styles: dict[str, ParagraphStyle]) -> None:
+    narrative = report.get("narrative") if isinstance(report.get("narrative"), dict) else {}
     corrections = report.get("corrections") if isinstance(report.get("corrections"), list) else []
-    _section(story, "修正记录与报告局限", styles)
     if corrections:
-        correction_rows = []
+        _section(story, "更正记录", styles)
         for correction in corrections[:200]:
             if not isinstance(correction, dict):
                 continue
             field = _plain(correction.get("field"), maximum=300)
-            correction_rows.append([field, _correction_value(field, correction.get("before")), _correction_value(field, correction.get("after"))])
-        if correction_rows:
-            story.append(_data_table(["字段", "原识别", "确认后"], correction_rows,
-                                     [width * 0.34, width * 0.33, width * 0.33], styles))
-    else:
-        story.append(_paragraph("没有记录到字段修正。", styles["body"]))
-
+            before = _correction_value(field, correction.get("before"))
+            after = _correction_value(field, correction.get("after"))
+            story.append(_paragraph(f"{field}：{before} → {after}", styles["body"], maximum=2400))
+    _section(story, "报告局限", styles)
     limitations = narrative.get("limitations") if isinstance(narrative.get("limitations"), list) else []
     if limitations:
         for index, item in enumerate(limitations[:100], 1):
-            story.append(_paragraph(f"{index}. {_plain(item, maximum=1200)}", styles["body"], maximum=1400))
+            story.append(_paragraph(f"{index}. {_plain(item, maximum=12000)}", styles["body"], maximum=13000))
     else:
         story.append(_paragraph("未提供单独的报告局限说明。", styles["body"]))
     generation = report.get("generation") if isinstance(report.get("generation"), dict) else {}
@@ -502,13 +537,35 @@ def _draw_page(canvas: Any, document: Any) -> None:
     canvas.setStrokeColor(_LINE)
     canvas.setLineWidth(0.6)
     canvas.line(left, page_height - 14 * mm, right, page_height - 14 * mm)
-    canvas.setFont(_REGULAR, 7.5)
+    canvas.setFont(_REGULAR, 8)
     canvas.setFillColor(_MUTED)
-    canvas.drawString(left, page_height - 11 * mm, "明示贷查，贷款材料核查报告")
+    canvas.drawString(left, page_height - 11 * mm, "明示贷查 · 贷款材料核查报告")
     canvas.line(left, 14 * mm, right, 14 * mm)
-    canvas.drawString(left, 9 * mm, "基于提供材料与用户确认事实生成")
-    canvas.drawRightString(right, 9 * mm, f"第 {document.page} 页")
+    canvas.drawString(left, 9 * mm, "明示贷查 · 基于你提供的材料，不构成法律意见")
     canvas.restoreState()
+
+
+class _NumberedCanvas(Canvas):
+    """Render page totals in the footer without writing report data to disk."""
+
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        super().__init__(*args, **kwargs)
+        self._saved_page_states: list[dict[str, Any]] = []
+
+    def showPage(self) -> None:  # noqa: N802 - ReportLab Canvas API
+        self._saved_page_states.append(dict(self.__dict__))
+        self._startPage()
+
+    def save(self) -> None:
+        page_count = len(self._saved_page_states)
+        page_width, _ = A4
+        for page_state in self._saved_page_states:
+            self.__dict__.update(page_state)
+            self.setFont(_REGULAR, 8)
+            self.setFillColor(_MUTED)
+            self.drawRightString(page_width - 17 * mm, 9 * mm, f"第 {self._pageNumber} 页 / 共 {page_count} 页")
+            super().showPage()
+        super().save()
 
 
 def _validate(payload: Any) -> tuple[dict[str, Any], dict[str, Any]]:
@@ -557,37 +614,50 @@ def create_report_pdf(payload: Any) -> bytes:
         _paragraph(report.get("title"), styles["title"], maximum=300),
         _paragraph(f"生成时间：{_plain(report.get('generated_at'))}；生成方式：{mode_label}", styles["subtitle"]),
     ]
+    facts = report.get("facts") if isinstance(report.get("facts"), dict) else {}
+    loan = facts.get("loan") if isinstance(facts.get("loan"), dict) else {}
+    lender = facts.get("lender") if isinstance(facts.get("lender"), dict) else {}
+    identity = []
+    if lender.get("name"):
+        identity.append(_plain(lender.get("name"), maximum=300))
+    if loan.get("principal") is not None:
+        identity.append(f"本金 {_money(loan.get('principal'))}")
+    if loan.get("term_periods") is not None:
+        identity.append(f"{_plain(loan.get('term_periods'))} 期")
+    if identity:
+        story.append(_paragraph("贷款身份：" + " · ".join(identity), styles["subtitle"]))
     if report.get("synthetic_sample") is True:
         story.append(_paragraph("模拟数据样例；不含真实个人信息；非实际核查结果", styles["small"]))
 
     conclusion = report.get("conclusion") if isinstance(report.get("conclusion"), dict) else {}
     conclusion_label = _plain(export_data.get("conclusion_label"), fallback="核查结论", maximum=100)
-    summary = _plain(conclusion.get("summary"), maximum=4000)
-    callout = Table([[ _paragraph(conclusion_label, styles["label"], maximum=100), _paragraph(summary, styles["callout"], maximum=4200) ]], colWidths=[30 * mm, width - 30 * mm], hAlign="LEFT")
-    callout.setStyle(TableStyle([
-        ("BACKGROUND", (0, 0), (-1, -1), _PALE),
-        ("BOX", (0, 0), (-1, -1), 0.6, _LINE),
-        ("VALIGN", (0, 0), (-1, -1), "TOP"),
-        ("LEFTPADDING", (0, 0), (-1, -1), 8),
-        ("RIGHTPADDING", (0, 0), (-1, -1), 8),
-        ("TOPPADDING", (0, 0), (-1, -1), 8),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 8),
-    ]))
-    story.append(callout)
+    summary = _plain(conclusion.get("summary"), maximum=12000)
+    story.append(_paragraph(conclusion_label, styles["section"], maximum=100))
+    story.append(_paragraph(summary, styles["callout"], maximum=12500))
     counts = conclusion.get("counts") if isinstance(conclusion.get("counts"), dict) else {}
-    story.append(Spacer(1, 5))
-    story.append(_paragraph(
-        f"确认问题：{_plain(counts.get('confirmed_issues'), fallback='0')}；待核实：{_plain(counts.get('pending_checks'), fallback='0')}；阅读提示：{_plain(counts.get('advisory_hints'), fallback='0')}",
-        styles["small"],
-    ))
+    count_labels = (
+        ("确认问题", "confirmed_issues"),
+        ("待核实", "pending_checks"),
+        ("阅读提示", "advisory_hints"),
+    )
+    count_text = []
+    for label, key in count_labels:
+        value = counts.get(key)
+        if _number(value) == 0:
+            continue
+        count_text.append(f"{label}：{_plain(value, fallback='待确认')}")
+    if count_text:
+        story.append(_paragraph("；".join(count_text), styles["small"]))
 
-    _append_facts(story, report, styles, width)
     _append_calculation(story, report, styles, width)
-    _append_fees(story, report, styles, width)
-    _append_lender_sources(story, report, styles)
+    _append_actions(story, report, styles)
+    _append_fees(story, report, styles)
     _append_rules(story, report, export_data, styles)
-    _append_actions_and_limits(story, report, styles, width)
-    document.build(story, onFirstPage=_draw_page, onLaterPages=_draw_page)
+    _append_other_rates(story, report, styles, width)
+    _append_facts(story, report, styles)
+    _append_lender_sources(story, report, styles)
+    _append_report_limits(story, report, styles)
+    document.build(story, onFirstPage=_draw_page, onLaterPages=_draw_page, canvasmaker=_NumberedCanvas)
     return buffer.getvalue()
 
 

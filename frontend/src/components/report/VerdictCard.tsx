@@ -1,93 +1,78 @@
 import type { AuditReport } from '../../types/audit.ts';
-import { decimal, methodNames, percent } from '../../lib/format.ts';
-import { rulePresentation } from '../../../../shared/rule-policy.ts';
+import { decimal, methodNames, money, percent } from '../../lib/format.ts';
 import { Card, Tag, type Tone } from '../base/index.tsx';
 
 const levelTone: Record<AuditReport['conclusion']['level'], Tone> = {
-  red: 'red', yellow: 'amber', blue: 'blue',
+  red: 'red',
+  yellow: 'amber',
+  blue: 'blue',
 };
-const levelName: Record<AuditReport['conclusion']['level'], string> = { red: '重点关注', yellow: '披露需核对', blue: '当前无已确认问题' };
 
 export function VerdictCard({ report }: { report: AuditReport }) {
   const comparison = report.calculation?.calculation.comparison;
-  const tone = levelTone[report.conclusion.level];
   const method = comparison?.method;
   const methodLabel = comparison?.method_basis === 'assumed_simple' ? '按单利推定' : comparison?.method_basis === 'unavailable' ? '口径待确认' : method ? methodNames[method] ?? method : '口径待确认';
   const { confirmed_issues, pending_checks, advisory_hints } = report.conclusion.counts;
-  const differenceRule = report.rules.find((rule) => rule.rule_id === 'R02');
-  const differencePresentation = differenceRule ? rulePresentation(differenceRule) : null;
-  const differenceTone = differencePresentation?.tone === 'amber'
-    ? 'amber'
-    : differencePresentation?.tone === 'red'
-      ? 'red'
-      : 'neutral';
-  const heading = confirmed_issues > 0
-    ? '有已确认的规则问题需要关注。'
+  const conclusionTone = levelTone[report.conclusion.level];
+  const tone = confirmed_issues === 0 && pending_checks > 0 ? 'amber' : conclusionTone;
+  const canCompare = comparison?.quoted_apr != null && comparison.computed_apr != null && comparison.method_basis !== 'unavailable';
+  const heading = canCompare
+    ? `明示年化 ${percent(comparison.quoted_apr)}，按材料重算约 ${percent(comparison.computed_apr)}`
+    : confirmed_issues > 0
+    ? '本次核查有已确认命中'
     : pending_checks > 0
-      ? '部分信息仍需核实。'
-      : advisory_hints > 0
-        ? '阅读提示'
-        : '规则比对已完成。';
+      ? '本次核查有待核实项目'
+      : '本次核查摘要';
+  const leadRule = report.rules.find((rule) => rule.rule_id === 'R03' && rule.status === 'triggered')
+    ?? report.rules.find((rule) => rule.status === 'triggered' && rule.nature !== 'advisory')
+    ?? report.rules.find((rule) => rule.status === 'insufficient_data');
+  const advisoryRule = report.rules.find((rule) => rule.status === 'triggered' && rule.nature === 'advisory');
+  const displayedRule = leadRule ?? advisoryRule;
+  const leadExplanation = displayedRule?.reason ?? report.conclusion.summary;
+  const feeTotals = new Map((report.calculation?.fee_totals ?? []).map((item) => [item.id, item]));
+  const confirmedSeparateUndisclosedFees = report.facts.fees.filter((fee) =>
+    fee.in_disclosure === false && fee.included_in_cashflows === false && fee.contingent === false,
+  );
+  const feeStatusPending = report.facts.fees.filter((fee) =>
+    fee.in_disclosure === null || fee.included_in_cashflows === null,
+  ).length;
+  const showGap = comparison?.gap_pp != null && comparison.method_basis !== 'unavailable';
 
   return (
-    <Card padding="lg" className="relative overflow-hidden">
+    <Card padding="none" className="relative overflow-hidden p-4 sm:p-7">
       <div className={`absolute inset-y-0 left-0 w-1 ${tone === 'red' ? 'bg-red' : tone === 'amber' ? 'bg-amber' : 'bg-blue'}`} />
-      <div className="flex flex-col gap-5 pl-2">
+      <div className="flex flex-col gap-3 pl-2">
         <div className="flex flex-wrap items-center gap-2">
-          <Tag tone={tone}>{levelName[report.conclusion.level]}</Tag>
+          {confirmed_issues > 0 ? <Tag tone={conclusionTone}>已确认命中 {confirmed_issues} 条</Tag> : null}
+          {pending_checks > 0 ? <Tag tone="amber">待核实 {pending_checks} 条</Tag> : null}
+          {advisory_hints > 0 ? <Tag tone="blue">阅读提示 {advisory_hints} 条</Tag> : null}
           {report.conclusion.partial ? <Tag tone="blue">计算未完成</Tag> : null}
-          {report.conclusion.information_incomplete ? <Tag tone="blue">信息待补充</Tag> : null}
+          {report.conclusion.information_incomplete && pending_checks === 0 ? <Tag tone="blue">信息待补充</Tag> : null}
         </div>
-        {report.conclusion.partial || !report.calculation ? (
-          <p className="rounded-md border border-line bg-blue/5 px-4 py-3 text-sm text-ink-soft">
-            材料不足，未核算年化。报告中的规则与已确认事实仍可供参考。
-          </p>
+        <h2 className="font-serif text-lg font-medium leading-snug">{heading}</h2>
+        {canCompare ? <p className="text-2xs text-mute">{comparison.method_basis === 'assumed_simple' ? '按单利推定，披露口径待确认' : methodLabel}；重算结果依据已确认材料。</p> : null}
+        <p className="line-clamp-2 whitespace-pre-wrap text-sm leading-relaxed text-ink-soft">{leadExplanation}</p>
+        {report.calculation ? <p className="text-sm">核算总成本：<strong className="font-medium num">{money(report.calculation.summary.total_cost)}</strong></p> : <p className="text-sm text-mute">总成本与重算年化暂不可用。</p>}
+        {confirmedSeparateUndisclosedFees.length ? (
+          <p className="text-sm text-ink-soft">未列明且另付：{confirmedSeparateUndisclosedFees.slice(0, 2).map((fee) => {
+            const total = feeTotals.get(fee.id)?.total;
+            return `${fee.name}${total === undefined ? '（金额待核算）' : ` ${money(total)}`}`;
+          }).join('、')}{confirmedSeparateUndisclosedFees.length > 2 ? ` 等 ${confirmedSeparateUndisclosedFees.length} 项` : ''}</p>
         ) : null}
-        <h2 className="font-serif text-xl font-medium">{heading}</h2>
-        <p className="whitespace-pre-wrap text-sm leading-relaxed text-ink-soft">{report.conclusion.summary}</p>
-
-        <dl className="grid gap-3 sm:grid-cols-3">
-          <Count label="确认问题" value={confirmed_issues} tone={report.conclusion.level==='red'?'red':report.conclusion.level==='yellow'?'amber':'blue'} />
-          <Count label="待核实" value={pending_checks} tone={report.rules.some(rule=>rule.status==='insufficient_data'&&rule.nature==='prohibited')?'amber':'blue'} />
-          <Count label="阅读提示" value={advisory_hints} tone="blue" />
-        </dl>
-
-        <div className="grid gap-3 sm:grid-cols-3">
-          <Metric label="披露年化" value={report.facts.disclosure.quoted_apr === null ? '未标注' : percent(report.facts.disclosure.quoted_apr)} note={methodNames[report.facts.disclosure.quoted_method] ?? '口径待确认'} />
-          <Metric label="按材料重算" value={percent(comparison?.computed_apr)} note={methodLabel} />
-          <Metric
-            label="两者差额"
-            value={comparison?.gap_pp == null ? '口径待确认' : `${decimal(comparison.gap_pp)} 个百分点`}
-            note={comparison?.method_basis === 'assumed_simple' ? '按单利推定，披露口径待确认' : comparison?.exceeds_tolerance === true ? '超过比较容差' : comparison?.exceeds_tolerance === false ? '未超过比较容差' : '是否超出容差未知'}
-            tone={comparison?.exceeds_tolerance === true ? differenceTone : 'neutral'}
-          />
+        {feeStatusPending > 0 ? <p className="text-sm text-amber">有 {feeStatusPending} 项费用的明示状态或现金流纳入情况待确认，详见费用明细。</p> : null}
+        <div className="grid grid-cols-2 gap-2 pt-1 sm:flex">
+          <a href="#report-actions" className="inline-flex min-h-11 items-center justify-center rounded-md bg-ink px-3 text-sm font-medium text-surface hover:bg-ink-soft">查看核实动作</a>
+          <a href="#report-rules" className="inline-flex min-h-11 items-center justify-center rounded-md border border-line-strong bg-surface px-3 text-sm text-ink hover:border-ink">查看依据</a>
         </div>
-        {!report.calculation && report.calculation_error ? (
-          <p className="text-sm text-mute">计算暂不可用（{report.calculation_error.code}）：{report.calculation_error.message}</p>
-        ) : null}
-        {report.calculation && !comparison?.computed_apr ? (
-          <p className="text-sm text-mute">当前比较口径的重算年化不可用；页面不会用名义年化替代该数值。</p>
-        ) : null}
+        <details className="text-2xs text-mute">
+          <summary className="cursor-pointer font-medium text-blue">查看报告摘要与比较口径</summary>
+          <p className="mt-2 whitespace-pre-wrap">{leadExplanation}</p>
+          {report.conclusion.summary !== leadExplanation ? <p className="mt-2 whitespace-pre-wrap">{report.conclusion.summary}</p> : null}
+          <p className="mt-2">明示年化：{report.facts.disclosure.quoted_apr === null ? '未提供' : percent(report.facts.disclosure.quoted_apr)}（{methodNames[report.facts.disclosure.quoted_method] ?? '口径待确认'}）；按材料重算：{comparison?.computed_apr == null ? '暂不可用' : percent(comparison.computed_apr)}（{methodLabel}）。</p>
+          {showGap ? <p className="mt-2">比较差额：{decimal(comparison.gap_pp)} 个百分点；比较容差是本工具设置的提示门槛，不是违法认定标准。</p> : null}
+          {report.calculation ? <p className="mt-2">独立支付费用合计：{money(report.calculation.summary.total_additional_fees)}，不等同于未列入明示表的金额。</p> : null}
+        </details>
       </div>
     </Card>
-  );
-}
-
-function Count({ label, value, tone }: { label: string; value: number; tone: 'red' | 'amber' | 'blue' }) {
-  return (
-    <div className="rounded-md bg-canvas p-4">
-      <dt className="text-sm text-mute">{label}</dt>
-      <dd className={`mt-1 text-xl font-medium tabular-nums ${value===0?'text-mute':tone === 'red' ? 'text-red' : tone === 'amber' ? 'text-amber' : 'text-blue'}`}>{value}</dd>
-    </div>
-  );
-}
-
-function Metric({ label, value, note, tone = 'neutral' }: { label: string; value: string; note: string; tone?: 'red' | 'amber' | 'neutral' }) {
-  return (
-    <div className={`flex min-w-0 flex-col gap-1 rounded-md p-4 ${tone === 'red' ? 'bg-red/5' : tone === 'amber' ? 'bg-amber-bg/50' : 'bg-canvas'}`}>
-      <span className="text-sm text-mute">{label}</span>
-      <strong className={`break-words font-serif text-xl font-medium num ${tone === 'red' ? 'text-red' : tone === 'amber' ? 'text-amber' : ''}`}>{value}</strong>
-      <span className="text-xs text-mute">{note}</span>
-    </div>
   );
 }
