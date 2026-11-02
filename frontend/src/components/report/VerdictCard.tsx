@@ -23,12 +23,6 @@ export function VerdictCard({ report }: { report: AuditReport }) {
     : pending_checks > 0
       ? '本次核查有待核实项目'
       : '本次核查摘要';
-  const leadRule = report.rules.find((rule) => rule.rule_id === 'R03' && rule.status === 'triggered')
-    ?? report.rules.find((rule) => rule.status === 'triggered' && rule.nature !== 'advisory')
-    ?? report.rules.find((rule) => rule.status === 'insufficient_data');
-  const advisoryRule = report.rules.find((rule) => rule.status === 'triggered' && rule.nature === 'advisory');
-  const displayedRule = leadRule ?? advisoryRule;
-  const leadExplanation = displayedRule?.reason ?? report.conclusion.summary;
   const feeTotals = new Map((report.calculation?.fee_totals ?? []).map((item) => [item.id, item]));
   const confirmedSeparateUndisclosedFees = report.facts.fees.filter((fee) =>
     fee.in_disclosure === false && fee.included_in_cashflows === false && fee.contingent === false,
@@ -51,7 +45,6 @@ export function VerdictCard({ report }: { report: AuditReport }) {
         </div>
         <h2 className="font-serif text-lg font-medium leading-snug">{heading}</h2>
         {canCompare ? <p className="text-2xs text-mute">{comparison.method_basis === 'assumed_simple' ? '按单利推定，披露口径待确认' : methodLabel}；重算结果依据已确认材料。</p> : null}
-        <p className="line-clamp-2 whitespace-pre-wrap text-sm leading-relaxed text-ink-soft">{leadExplanation}</p>
         {report.calculation ? <p className="text-sm">核算总成本：<strong className="font-medium num">{money(report.calculation.summary.total_cost)}</strong></p> : <p className="text-sm text-mute">总成本与重算年化暂不可用。</p>}
         {confirmedSeparateUndisclosedFees.length ? (
           <p className="text-sm text-ink-soft">未列明且另付：{confirmedSeparateUndisclosedFees.slice(0, 2).map((fee) => {
@@ -65,9 +58,7 @@ export function VerdictCard({ report }: { report: AuditReport }) {
           <a href="#report-rules" className="inline-flex min-h-11 items-center justify-center rounded-md border border-line-strong bg-surface px-3 text-sm text-ink hover:border-ink">查看依据</a>
         </div>
         <details className="text-2xs text-mute">
-          <summary className="cursor-pointer font-medium text-blue">查看报告摘要与比较口径</summary>
-          <p className="mt-2 whitespace-pre-wrap">{leadExplanation}</p>
-          {report.conclusion.summary !== leadExplanation ? <p className="mt-2 whitespace-pre-wrap">{report.conclusion.summary}</p> : null}
+          <summary className="cursor-pointer font-medium text-blue">查看比较口径与金额说明</summary>
           <p className="mt-2">明示年化：{report.facts.disclosure.quoted_apr === null ? '未提供' : percent(report.facts.disclosure.quoted_apr)}（{methodNames[report.facts.disclosure.quoted_method] ?? '口径待确认'}）；按材料重算：{comparison?.computed_apr == null ? '暂不可用' : percent(comparison.computed_apr)}（{methodLabel}）。</p>
           {showGap ? <p className="mt-2">比较差额：{decimal(comparison.gap_pp)} 个百分点；比较容差是本工具设置的提示门槛，不是违法认定标准。</p> : null}
           {report.calculation ? <p className="mt-2">独立支付费用合计：{money(report.calculation.summary.total_additional_fees)}，不等同于未列入明示表的金额。</p> : null}

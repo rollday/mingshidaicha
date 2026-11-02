@@ -30,6 +30,8 @@ class ReportPdfTests(unittest.TestCase):
         document = fitz.open(stream=pdf, filetype="pdf")
         text = "\n".join(page.get_text() for page in document)
         self.assertIn("贷款材料核查报告", text)
+        self.assertIn("核查概要", text)
+        self.assertIn("用于测试生成的虚构报告", text)
         self.assertIn("虚构示例金融机构", text)
         self.assertIn("10.60%", text)
         self.assertIn("总成本", text)
@@ -76,18 +78,29 @@ class ReportPdfTests(unittest.TestCase):
         self.assertIn("披露口径待确认", text)
         document.close()
 
+    def test_ai_success_is_labeled_as_ai_summary(self):
+        payload = sample_payload()
+        payload["report"]["generation"] = {"mode": "ai", "error_code": None}
+        document = fitz.open(stream=create_report_pdf(payload), filetype="pdf")
+        first_page = document[0].get_text()
+        self.assertIn("AI 概要", first_page)
+        self.assertIn("生成方式：AI 撰写", first_page)
+        document.close()
+
     def test_first_page_highlights_comparison_cost_and_actions_without_conflating_fees(self):
         document = fitz.open(stream=create_report_pdf(sample_payload()), filetype="pdf")
         first_page = document[0].get_text()
         self.assertIn("10.60%", first_page)
-        self.assertIn("还款计划合计", first_page)
-        self.assertIn("另付费用单列", first_page)
+        self.assertIn("核心数字", first_page)
         self.assertIn("独立支付费用合计", first_page)
-        self.assertIn("我该怎么办", first_page)
+        self.assertIn("先做什么", first_page)
         self.assertIn("核对模拟披露方式与还款计划", first_page)
         full_text = "\n".join(page.get_text() for page in document)
         self.assertIn("信息不足不等于已发现问题", full_text)
+        self.assertIn("另有未命中 1 项、不适用 0 项，未逐项展开", full_text)
+        self.assertNotIn("模拟未命中项目", full_text)
         self.assertIn("表格栏目齐全", full_text)
+        self.assertNotIn("错误代码", full_text)
         document.close()
 
     def test_short_actions_keep_their_rule_reference_on_the_same_page(self):

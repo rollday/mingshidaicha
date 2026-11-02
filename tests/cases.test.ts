@@ -126,13 +126,13 @@ test('layout-only quote matching restores source text and never changes a number
   assert.equal(locateQuote('实际到账10000元。', '实际到账10000元，另收费。'), null);
 });
 
-test('report makes at most one repair attempt and can reference confirmed correction values', async () => {
+test('report accepts approved correction values directly and can also render correction placeholders', async () => {
   const model = new CaseModel({ ...config, apiKey: undefined });
   let calls = 0;
   model.json = async () => ++calls === 1
     ? { summary: '服务费从50元改为55元。', findings: [], actions: [], limitations: ['依据确认事实。'] }
     : { summary: '服务费从{{corrections.0.before}}调整为{{corrections.0.after}}。', findings: [], actions: [], limitations: ['依据确认事实。'] };
   const report = await generateReport(model, { facts: facts(), calculation: null, calculation_error: null, rules: [], evidence: [], corrections: [{ field: 'fees[0].amount', before: '50', after: '55' }] }, new AbortController().signal, () => {});
-  assert.equal(calls, 2); assert.equal(report.generation.mode, 'ai'); assert.equal(report.generation.attempts, 2);
-  assert.equal(report.narrative.summary, '服务费从50.00元调整为55.00元。');
+  assert.equal(calls, 1); assert.equal(report.generation.mode, 'ai'); assert.equal(report.generation.attempts, 1);
+  assert.equal(report.narrative.summary, '服务费从50元改为55元。');
 });
