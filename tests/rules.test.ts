@@ -24,7 +24,7 @@ function loanResult(exceeds: boolean | null): LoanResult {
       cashflows: [], nominal_apr: null, effective_apr: null, simple_apr: null, xirr_apr: null,
       comparison: { method: 'effective', quoted_apr: '0.1', computed_apr: '0.1', gap_pp: '0', exceeds_tolerance: exceeds },
     },
-    summary: { principal: '10000', disbursed: '10000', total_repayment: '10800', total_additional_fees: '0', total_cost: '800' },
+    summary: { principal: '10000', disbursed: '10000', total_repayment: '10800', total_additional_fees: '0', total_payment: '10800', total_cost: '800' },
     fee_totals: [],
   };
 }

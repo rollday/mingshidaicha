@@ -365,6 +365,7 @@ def calculate_loan(payload: Any) -> dict[str, Any]:
                 "disbursed": _fmt(disbursed),
                 "total_repayment": _fmt(total_repayment),
                 "total_additional_fees": _fmt(total_additional_fees),
+                "total_payment": _fmt(total_repayment + total_additional_fees),
                 "total_cost": _fmt(total_repayment + total_additional_fees - disbursed),
             },
             "fee_totals": fee_totals,

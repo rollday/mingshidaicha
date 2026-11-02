@@ -281,8 +281,9 @@ def _append_calculation(story: list[Any], report: dict[str, Any], styles: dict[s
         ["借款本金", _money(summary.get("principal"))],
         ["实际到账", _money(summary.get("disbursed"))],
         ["还款计划合计（另付费用单列）", _money(summary.get("total_repayment"))],
-        ["独立支付费用合计", _money(summary.get("total_additional_fees"))],
-        ["总成本", _money(summary.get("total_cost"))],
+        ["另付费用合计", _money(summary.get("total_additional_fees"))],
+        ["预计实际支付", _money(summary.get("total_payment"))],
+        ["借款成本（不含归还本金）", _money(summary.get("total_cost"))],
     ]
     block.extend([
         Spacer(1, 7),
@@ -318,12 +319,12 @@ def _append_key_metrics(story: list[Any], report: dict[str, Any], styles: dict[s
         ["明示年化", f"{_percent(comparison.get('quoted_apr'))}（{_method(comparison.get('disclosed_method'))}）"],
         ["按材料重算", f"{_percent(comparison.get('computed_apr'))}（{method}）"],
         ["比较差额", gap],
-        ["独立支付费用合计", _money(summary.get("total_additional_fees"))],
-        ["核算总成本", _money(summary.get("total_cost"))],
+        ["预计实际支付", f"{_money(summary.get('total_payment'))}（还款计划 {_money(summary.get('total_repayment'))} + 另付费用 {_money(summary.get('total_additional_fees'))}）"],
+        ["借款成本（不含还本）", _money(summary.get("total_cost"))],
     ]
     _section(story, "核心数字", styles)
     story.append(_data_table(["项目", "结果"], rows, [width * 0.36, width * 0.64], styles, repeat=False))
-    story.append(_paragraph("比较差额是本工具按已确认材料计算的提示信号；部分术语会在后文解释。", styles["small"]))
+    story.append(_paragraph("预计实际支付=还款计划合计+另付费用；借款成本再扣除实际到账，不包含归还本金。比较差额是本工具按已确认材料计算的提示信号。", styles["small"]))
 
 
 def _append_other_rates(story: list[Any], report: dict[str, Any], styles: dict[str, ParagraphStyle], width: float) -> None:

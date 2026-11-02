@@ -45,9 +45,10 @@ export function FeeTable({ report }: { report: AuditReport }) {
       <SectionHeading title="钱花在哪" subtitle="金额和披露状态按已确认材料展示。" />
       <Card padding="none" className="p-4 sm:px-7 sm:py-6">
         {report.calculation ? (
-          <p className="text-sm">
-            还款计划合计（另付费用单列）：<strong className="font-medium num">{money(report.calculation.summary.total_repayment)}</strong>
-          </p>
+          <div className="flex flex-col gap-1">
+            <p className="text-base">按当前材料预计实际支付：<strong className="font-medium num">{money(report.calculation.summary.total_payment)}</strong></p>
+            <p className="text-sm text-ink-soft">还款计划 {money(report.calculation.summary.total_repayment)} + 另付费用 {money(report.calculation.summary.total_additional_fees)}。</p>
+          </div>
         ) : <p className="text-sm text-mute">还款合计暂不可用。</p>}
         {report.facts.fees.length ? (
           <ul className="mt-3 flex flex-col gap-2 text-sm">
@@ -81,7 +82,7 @@ export function FeeTable({ report }: { report: AuditReport }) {
             {report.facts.fees.map((fee) => <div key={fee.id} className="flex flex-wrap gap-x-5 gap-y-1"><span>{fee.name}</span><span className="text-mute">已含在到账或还款额中：{triState(fee.included_in_cashflows)}</span><span className="text-mute">已计入明示年化：{triState(fee.included_in_disclosed_cost)}</span></div>)}
           </div>
         ) : null}
-        {report.calculation ? <p className="mt-4 border-t border-line pt-4 text-sm text-mute">独立支付费用合计：{money(report.calculation.summary.total_additional_fees)}；总成本：{money(report.calculation.summary.total_cost)}</p> : <p className="mt-4 border-t border-line pt-4 text-sm text-mute">计算未完成，合计暂不可用。</p>}
+        {report.calculation ? <p className="mt-4 border-t border-line pt-4 text-sm text-mute">独立支付费用合计：{money(report.calculation.summary.total_additional_fees)}；借款成本（不含归还本金）：{money(report.calculation.summary.total_cost)}</p> : <p className="mt-4 border-t border-line pt-4 text-sm text-mute">计算未完成，合计暂不可用。</p>}
           </div>
         </details>
       </Card>

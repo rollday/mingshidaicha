@@ -26,6 +26,7 @@ class LoanPlanTests(unittest.TestCase):
         self.assertEqual(result["summary"]["principal"], "10000")
         self.assertEqual(result["summary"]["disbursed"], "10000")
         self.assertEqual(result["summary"]["total_repayment"], "10661.88")
+        self.assertEqual(result["summary"]["total_payment"], "10661.88")
         self.assertEqual(result["input"]["quoted_method"], "unknown")
         self.assertEqual(result["calculation"]["comparison"]["method"], "simple")
         self.assertEqual(result["calculation"]["comparison"]["method_basis"], "unavailable")
@@ -58,6 +59,7 @@ class LoanPlanTests(unittest.TestCase):
         result = calculate_loan(case)
         self.assertEqual(result["fee_totals"][0]["total"], "600")
         self.assertEqual(result["summary"]["total_additional_fees"], "600")
+        self.assertEqual(result["summary"]["total_payment"], "11261.88")
         self.assertEqual(len(result["input"]["fees"]), 12)
         self.assertGreater(Decimal(result["calculation"]["nominal_apr"]), Decimal("0.12"))
 

@@ -45,7 +45,7 @@ export function VerdictCard({ report }: { report: AuditReport }) {
         </div>
         <h2 className="font-serif text-lg font-medium leading-snug">{heading}</h2>
         {canCompare ? <p className="text-2xs text-mute">{comparison.method_basis === 'assumed_simple' ? '按单利推定，披露口径待确认' : methodLabel}；重算结果依据已确认材料。</p> : null}
-        {report.calculation ? <p className="text-sm">核算总成本：<strong className="font-medium num">{money(report.calculation.summary.total_cost)}</strong></p> : <p className="text-sm text-mute">总成本与重算年化暂不可用。</p>}
+        {!report.calculation ? <p className="text-sm text-mute">借款成本与重算年化暂不可用。</p> : null}
         {confirmedSeparateUndisclosedFees.length ? (
           <p className="text-sm text-ink-soft">未列明且另付：{confirmedSeparateUndisclosedFees.slice(0, 2).map((fee) => {
             const total = feeTotals.get(fee.id)?.total;

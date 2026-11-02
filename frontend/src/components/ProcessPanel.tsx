@@ -162,7 +162,8 @@ function CalculationPreview({ calculation }: { calculation: LoanResult | null })
     ['本金', money(calculation.summary.principal)],
     ['实际到账', money(calculation.summary.disbursed)],
     ['额外费用', money(calculation.summary.total_additional_fees)],
-    ['总成本', money(calculation.summary.total_cost)],
+    ['借款成本（不含还本）', money(calculation.summary.total_cost)],
+    ['预计实际支付', money(calculation.summary.total_payment)],
     [`计算年化（${comparisonMethod}）`, percent(calculation.calculation.comparison.computed_apr)],
   ] as const;
   return (

@@ -21,7 +21,7 @@ function mockModel(responses: string[]) {
 const input=()=>({facts:caseFactsSchema.parse({}),calculation:null,calculation_error:null,rules:[],evidence:[],corrections:[]});
 const calculatedInput=()=>({
   facts:caseFactsSchema.parse({loan:{principal:'1000',disbursed:'1000',term_periods:12,period_payment:'100',start_date:'2026-09-01'},disclosure:{present:true,quoted_apr:'0.12',quoted_method:'nominal',items_complete:true,contingent_disclosed:true}}),
-  calculation:{input:{},calculation:{cashflows:[],nominal_apr:'0.12',effective_apr:'0.12',simple_apr:'0.12',xirr_apr:null,comparison:{method:'nominal',method_basis:'explicit' as const,disclosed_method:'nominal',quoted_apr:'0.12',computed_apr:'0.12',gap_pp:'0',exceeds_tolerance:false}},summary:{principal:'1000',disbursed:'1000',total_repayment:'1200',total_additional_fees:'0',total_cost:'200'},fee_totals:[]},
+  calculation:{input:{},calculation:{cashflows:[],nominal_apr:'0.12',effective_apr:'0.12',simple_apr:'0.12',xirr_apr:null,comparison:{method:'nominal',method_basis:'explicit' as const,disclosed_method:'nominal',quoted_apr:'0.12',computed_apr:'0.12',gap_pp:'0',exceeds_tolerance:false}},summary:{principal:'1000',disbursed:'1000',total_repayment:'1200',total_additional_fees:'0',total_payment:'1200',total_cost:'200'},fee_totals:[]},
   calculation_error:null,rules:[],evidence:[],corrections:[],
 });
 
@@ -64,4 +64,12 @@ test('template fallback summary uses the concrete triggered-rule reason',async()
   assert.match(report.conclusion.summary,/本次核查确认 1 项需要关注/);
   assert.match(report.conclusion.summary,/正常履约费用未列入明示表/);
   assert.doesNotMatch(report.conclusion.summary,/已完成现金流计算/);
+});
+
+test('summary drops a vague evidence-reference sentence instead of showing it at the top',async()=>{
+  const fixture=mockModel(['{"summary":"本次核查确认费用披露存在差异。表外收费与总成本差异分别依据上述已确认事实。","findings":[],"actions":[],"limitations":["资料有限"]}']);
+  const report=await generateReport(fixture.model,calculatedInput(),new AbortController().signal,()=>{});
+  assert.equal(report.generation.mode,'ai');
+  assert.equal(report.narrative.summary,'本次核查确认费用披露存在差异。');
+  assert.doesNotMatch(report.narrative.summary,/上述已确认事实/);
 });

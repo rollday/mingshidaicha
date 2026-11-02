@@ -34,7 +34,7 @@
       "xirr_apr": null,
       "comparison": { "method": "effective", "method_basis": "explicit", "disclosed_method": "effective", "method_label": "复利年化", "quoted_apr": "0.10", "computed_apr": "0.106", "gap_pp": "0.6", "exceeds_tolerance": true }
     },
-    "summary": { "principal": "10000", "disbursed": "9500", "total_repayment": "10800", "total_additional_fees": "80", "total_cost": "1380" },
+    "summary": { "principal": "10000", "disbursed": "9500", "total_repayment": "10800", "total_additional_fees": "80", "total_payment": "10880", "total_cost": "1380" },
     "fee_totals": [{ "id": "synthetic-service", "name": "模拟服务费", "total": "80", "contingent": false }]
   },
   "calculation_error": null,

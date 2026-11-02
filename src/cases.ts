@@ -171,7 +171,7 @@ export class CaseWorkflow {
       emit('case.calculation_unavailable', { case_id: record.id, ...calculationError, missing_fields: missing });
     }
     checkpoint();
-    log('calculate',calculation?'completed':'warning',calculation?`核算完成：独立支付费用合计 ${displayDecimal(calculation.summary.total_additional_fees)} 元，总成本 ${displayDecimal(calculation.summary.total_cost)} 元`:'现有材料不足以完成核算，后续只展示已知事实与待补充项',{},'analysis');
+    log('calculate',calculation?'completed':'warning',calculation?`核算完成：预计实际支付 ${displayDecimal(calculation.summary.total_payment)} 元，其中借款成本（不含还本）${displayDecimal(calculation.summary.total_cost)} 元`:'现有材料不足以完成核算，后续只展示已知事实与待补充项',{},'analysis');
     emit('task.progress', { stage: 'check_rules' });
     const rules = evaluateRules(record.facts, calculation, record.extraction.evidence);
     record.checked={case_id:record.id,revision:record.revision,calculation,rules};
