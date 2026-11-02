@@ -190,7 +190,7 @@ summary与每项解释要具体对应输入，给用户易懂的中文。仅当c
     live?.({attempt:attempts,status:'discarded',sections:[]});
     if (signal.aborted) throw new AppError('TASK_CANCELLED', '任务已取消。', 499);
     mode = 'template'; generationError = error instanceof AppError ? error.code : 'REPORT_GENERATION_FAILED';
-    console.warn(JSON.stringify({
+    if (process.env.NODE_ENV === 'production') console.warn(JSON.stringify({
       event: 'report.generation_fallback',
       code: generationError,
       reason: error instanceof AppError ? error.message : 'unexpected error',
