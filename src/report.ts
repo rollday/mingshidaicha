@@ -199,7 +199,7 @@ summary与每项解释要具体对应输入，给用户易懂的中文。仅当c
       summary: fallbackSummary(input),
       findings: input.rules.filter(r => r.status === 'triggered' || r.status === 'insufficient_data').map(r => ({ rule_id: r.rule_id, explanation: r.reason })),
       actions: input.rules.filter(r => r.status === 'triggered' || r.status === 'insufficient_data').map(r => ({ rule_id: r.rule_id, text: r.action })),
-      limitations: ['当前使用确定性模板，AI 报告生成未通过或暂不可用。', '报告基于已提供材料及用户确认事实，不构成法律意见或借贷建议。'],
+      limitations: ['AI 概要未通过内容校验，已由确定性规则结果生成；费用计算与核查结论保持完整。', '报告基于已提供材料及用户确认事实，不构成法律意见或借贷建议。'],
     };
   }
   if (input.calculation?.calculation.comparison.method_basis === 'assumed_simple') {

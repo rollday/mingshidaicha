@@ -544,7 +544,7 @@ def _append_report_limits(story: list[Any], report: dict[str, Any], styles: dict
         story.append(_paragraph("未提供单独的报告局限说明。", styles["body"]))
     generation = report.get("generation") if isinstance(report.get("generation"), dict) else {}
     if generation.get("mode") == "template":
-        story.append(_paragraph("本报告使用确定性模板生成，以完整保留费用计算与规则核查结果。", styles["small"]))
+        story.append(_paragraph("本报告概要由确定性规则结果生成，以完整保留费用计算与规则核查结果。", styles["small"]))
     story.append(Spacer(1, 4))
     story.append(_paragraph(report.get("disclaimer"), styles["small"], fallback="本报告基于提供材料进行事实比对，不构成法律意见或借贷建议。", maximum=1000))
 

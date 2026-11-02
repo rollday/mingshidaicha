@@ -70,8 +70,8 @@ export default function Report({
           <div className="flex flex-wrap items-center gap-3">
             <h1 className="font-serif text-display font-bold">{report.title}</h1>
             {report.generation.mode === 'template' ? (
-              <span title={report.generation.error_code ?? 'AI 报告未通过校验或暂不可用'}>
-                <span className="rounded-full bg-canvas px-3 py-1 text-xs text-mute">模板生成</span>
+              <span title={report.generation.error_code ?? 'AI 概要未通过校验，已改用规则结果生成'}>
+                <span className="rounded-full bg-canvas px-3 py-1 text-xs text-mute">规则概要</span>
               </span>
             ) : null}
           </div>

@@ -13,7 +13,7 @@ export function CorrectionsNotice({ report }: { report: AuditReport }) {
         <div className={report.corrections.length ? 'border-t border-line pt-4' : ''}>
           <h3 className="text-base font-medium">报告局限</h3>
           <ul className="mt-2 flex list-disc flex-col gap-1 pl-5 text-sm text-mute">{report.narrative.limitations.map((item, index) => <li key={index}>{item}</li>)}</ul>
-          {report.generation.mode === 'template' ? <p className="mt-3 text-sm text-mute">本报告由模板生成，计算和规则结果仍以已确认的信息为准。</p> : null}
+          {report.generation.mode === 'template' ? <p className="mt-3 text-sm text-mute">本报告概要由规则结果生成，费用计算和核查结论完整；具体依据仍以已确认信息为准。</p> : null}
         </div>
         <p className="border-t border-line pt-4 text-sm text-mute">{report.disclaimer}</p>
       </Card>

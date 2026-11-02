@@ -192,7 +192,7 @@ export class CaseWorkflow {
     report.public_source_search = record.lender_search;
     log('write_report','completed',report.generation.mode==='ai'?'报告已完成金额占位符与规则引用校验':'已生成确定性模板报告');
     report.processing_activity=[...record.activities];
-    if (report.generation.mode === 'template') emit('report.warning', { case_id: record.id, code: report.generation.error_code, message: 'AI 报告暂不可用，已保留计算、规则和模板报告。' });
+    if (report.generation.mode === 'template') emit('report.warning', { case_id: record.id, code: report.generation.error_code, message: 'AI 概要未通过内容校验，已改用规则结果生成概要；费用计算和规则核查结果完整。' });
     emit('report.result', { case_id: record.id, revision: record.revision, report });
   }
 }
