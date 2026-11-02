@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 import base64
+from datetime import datetime
 import io
 import json
 import re
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from pathlib import Path
 from typing import Any
+from zoneinfo import ZoneInfo
 from xml.sax.saxutils import escape
 
 from reportlab.lib import colors
@@ -18,7 +20,7 @@ from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.lib.units import mm
 from reportlab.pdfgen.canvas import Canvas
-from reportlab.platypus import HRFlowable, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
+from reportlab.platypus import HRFlowable, KeepTogether, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 
 try:
     from .pdf_tools import PdfError
@@ -158,6 +160,17 @@ def _percent(value: Any) -> str:
     return "待确认" if value is None else _formatted_number(value, shift=2) + "%"
 
 
+def _timestamp(value: Any) -> str:
+    text = _plain(value, fallback="时间待确认", maximum=100)
+    try:
+        parsed = datetime.fromisoformat(text.replace("Z", "+00:00"))
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=ZoneInfo("Asia/Shanghai"))
+        return parsed.astimezone(ZoneInfo("Asia/Shanghai")).strftime("%Y-%m-%d %H:%M")
+    except (ValueError, TypeError):
+        return text
+
+
 def _points(value: Any) -> str:
     return "待确认" if value is None else _formatted_number(value) + " 个百分点"
 
@@ -189,21 +202,6 @@ def _section(story: list[Any], title: str, styles: dict[str, ParagraphStyle]) ->
         _paragraph(title, styles["section"]),
         divider,
     ])
-
-
-def _label_table(rows: list[tuple[str, str]], styles: dict[str, ParagraphStyle], width: float) -> Table:
-    cells = [[_paragraph(label, styles["label"]), _paragraph(value, styles["value"])] for label, value in rows]
-    table = Table(cells, colWidths=[31 * mm, width - 31 * mm], hAlign="LEFT")
-    table.setStyle(TableStyle([
-        ("BACKGROUND", (0, 0), (0, -1), _PALE),
-        ("GRID", (0, 0), (-1, -1), 0.35, _LINE),
-        ("VALIGN", (0, 0), (-1, -1), "TOP"),
-        ("LEFTPADDING", (0, 0), (-1, -1), 6),
-        ("RIGHTPADDING", (0, 0), (-1, -1), 6),
-        ("TOPPADDING", (0, 0), (-1, -1), 5),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
-    ]))
-    return table
 
 
 def _data_table(headers: list[str], rows: list[list[Any]], widths: list[float], styles: dict[str, ParagraphStyle], *, repeat: bool = True) -> Table:
@@ -267,42 +265,16 @@ def _append_facts(story: list[Any], report: dict[str, Any], styles: dict[str, Pa
 
 
 def _append_calculation(story: list[Any], report: dict[str, Any], styles: dict[str, ParagraphStyle], width: float) -> None:
-    _section(story, "年化与核心费用", styles)
     calculation = report.get("calculation")
+    block: list[Any] = []
+    _section(block, "成本构成明细", styles)
     if not isinstance(calculation, dict):
         error = report.get("calculation_error") if isinstance(report.get("calculation_error"), dict) else {}
         message = _plain(error.get("message"), fallback="本次材料不足或输入不完整，未生成计算结果。")
-        story.append(_paragraph(message, styles["body"], maximum=1600))
-        story.append(_paragraph("因此，本报告只列出已确认的事实和规则核查结果。", styles["small"]))
+        block.append(_paragraph(message, styles["body"], maximum=1600))
+        block.append(_paragraph("因此，本报告只列出已确认的事实和规则核查结果。", styles["small"]))
+        story.append(KeepTogether(block))
         return
-
-    results = calculation.get("calculation") if isinstance(calculation.get("calculation"), dict) else {}
-    comparison = results.get("comparison") if isinstance(results.get("comparison"), dict) else {}
-    method = _plain(comparison.get("method_label"), fallback=_method(comparison.get("method")), maximum=100)
-    method_basis = comparison.get("method_basis")
-    if method_basis == "assumed_simple":
-        if "按单利推定" not in method:
-            method += "（按单利推定）"
-        if "披露口径待确认" not in method:
-            method += "，披露口径待确认"
-    tolerance = None
-    raw_input = calculation.get("input")
-    if isinstance(raw_input, dict):
-        tolerance = raw_input.get("comparison_tolerance_pp")
-    tolerance_text = _points(tolerance)
-    exceeded = comparison.get("exceeds_tolerance")
-    result_text = "超过比较容差" if exceeded is True else "未超过比较容差" if exceeded is False else "是否超过容差待确认"
-    comparison_rows = [
-        ("比较口径", method),
-        ("披露年化", _percent(comparison.get("quoted_apr"))),
-        ("按材料重算", _percent(comparison.get("computed_apr"))),
-        ("两者差额", _points(comparison.get("gap_pp"))),
-        ("比较容差 / 结果", f"{tolerance_text} / {result_text}" if tolerance is not None else result_text),
-    ]
-    story.append(Spacer(1, 5))
-    story.append(_label_table(comparison_rows, styles, width))
-    if tolerance is not None:
-        story.append(_paragraph("比较容差是本工具设置的提示门槛，不是违法认定标准。", styles["small"]))
 
     summary = calculation.get("summary") if isinstance(calculation.get("summary"), dict) else {}
     totals = [
@@ -312,10 +284,46 @@ def _append_calculation(story: list[Any], report: dict[str, Any], styles: dict[s
         ["独立支付费用合计", _money(summary.get("total_additional_fees"))],
         ["总成本", _money(summary.get("total_cost"))],
     ]
-    story.append(Spacer(1, 7))
-    story.append(_data_table(["成本项目", "金额"], totals, [width * 0.52, width * 0.48], styles))
-    story.append(Spacer(1, 5))
-    story.append(_paragraph("计算沿用报告中的到账、还款和费用现金流口径；已包含在到账或还款金额中的费用不会重复计入。具体费用纳入状态见费用明细。", styles["small"]))
+    block.extend([
+        Spacer(1, 7),
+        _data_table(["成本项目", "金额"], totals, [width * 0.52, width * 0.48], styles),
+        Spacer(1, 5),
+        _paragraph("计算沿用报告中的到账、还款和费用现金流口径；已包含在到账或还款金额中的费用不会重复计入。具体费用纳入状态见费用明细。", styles["small"]),
+    ])
+    story.append(KeepTogether(block))
+
+
+def _append_key_metrics(story: list[Any], report: dict[str, Any], styles: dict[str, ParagraphStyle], width: float) -> None:
+    calculation = report.get("calculation")
+    if not isinstance(calculation, dict):
+        return
+    results = calculation.get("calculation") if isinstance(calculation.get("calculation"), dict) else {}
+    comparison = results.get("comparison") if isinstance(results.get("comparison"), dict) else {}
+    summary = calculation.get("summary") if isinstance(calculation.get("summary"), dict) else {}
+    method = _plain(comparison.get("method_label"), fallback=_method(comparison.get("method")), maximum=100)
+    if comparison.get("method_basis") == "assumed_simple":
+        method += "（按单利推定，披露口径待确认）"
+    gap = _points(comparison.get("gap_pp"))
+    if comparison.get("exceeds_tolerance") is True:
+        gap += "，超过比较容差"
+    elif comparison.get("exceeds_tolerance") is False:
+        gap += "，未超过比较容差"
+    tolerance = None
+    raw_input = calculation.get("input")
+    if isinstance(raw_input, dict):
+        tolerance = raw_input.get("comparison_tolerance_pp")
+    if tolerance is not None:
+        gap += f"（工具门槛 {_points(tolerance)}）"
+    rows = [
+        ["明示年化", f"{_percent(comparison.get('quoted_apr'))}（{_method(comparison.get('disclosed_method'))}）"],
+        ["按材料重算", f"{_percent(comparison.get('computed_apr'))}（{method}）"],
+        ["比较差额", gap],
+        ["独立支付费用合计", _money(summary.get("total_additional_fees"))],
+        ["核算总成本", _money(summary.get("total_cost"))],
+    ]
+    _section(story, "核心数字", styles)
+    story.append(_data_table(["项目", "结果"], rows, [width * 0.36, width * 0.64], styles, repeat=False))
+    story.append(_paragraph("比较差额是本工具按已确认材料计算的提示信号；部分术语会在后文解释。", styles["small"]))
 
 
 def _append_other_rates(story: list[Any], report: dict[str, Any], styles: dict[str, ParagraphStyle], width: float) -> None:
@@ -336,7 +344,7 @@ def _append_other_rates(story: list[Any], report: dict[str, Any], styles: dict[s
         rates.append([label, _percent(results.get(key))])
     if rates:
         _section(story, "其他年化口径", styles)
-        story.append(_data_table(["报告列示的年化结果", "数值"], rates, [width * 0.42, width * 0.58], styles))
+        story.append(_paragraph("；".join(f"{label} {value}" for label, value in rates) + "。", styles["body"]))
 
 
 def _append_fees(story: list[Any], report: dict[str, Any], styles: dict[str, ParagraphStyle]) -> None:
@@ -410,9 +418,14 @@ def _append_rules(story: list[Any], report: dict[str, Any], payload: dict[str, A
     presentation_by_id = {str(item.get("rule_id")): item for item in presentations if isinstance(item, dict) and item.get("rule_id") is not None}
     evidence = report.get("evidence") if isinstance(report.get("evidence"), list) else []
     evidence_by_id = {str(item.get("id")): item for item in evidence if isinstance(item, dict) and item.get("id") is not None}
-    for rule in rules[:300]:
-        if not isinstance(rule, dict):
-            continue
+    active = [rule for rule in rules if isinstance(rule, dict) and rule.get("status") in {"triggered", "insufficient_data"}]
+    active.sort(key=lambda rule: (0 if rule.get("status") == "triggered" else 1, str(rule.get("rule_id", ""))))
+    inactive = [rule for rule in rules if isinstance(rule, dict) and rule.get("status") in {"not_triggered", "not_applicable"}]
+    if inactive:
+        not_triggered = sum(1 for rule in inactive if rule.get("status") == "not_triggered")
+        not_applicable = sum(1 for rule in inactive if rule.get("status") == "not_applicable")
+        story.append(_paragraph(f"另有未命中 {not_triggered} 项、不适用 {not_applicable} 项，未逐项展开。", styles["small"]))
+    for rule in active[:300]:
         rule_id = _plain(rule.get("rule_id"), maximum=100)
         presentation = presentation_by_id.get(rule_id, {})
         raw_status = _plain(rule.get("status"), fallback="", maximum=40)
@@ -454,7 +467,12 @@ def _append_rules(story: list[Any], report: dict[str, Any], payload: dict[str, A
             item = evidence_by_id.get(str(evidence_id))
             if item and item not in linked:
                 linked.append(item)
+        seen_excerpts: set[tuple[str, Any, Any]] = set()
         for item in linked[:20]:
+            excerpt_key = (_plain(item.get("quote"), fallback="", maximum=2400), item.get("page"), item.get("source_type"))
+            if excerpt_key in seen_excerpts:
+                continue
+            seen_excerpts.add(excerpt_key)
             page = item.get("page")
             page_text = "" if page is None else f"，第 {_plain(page)} 页"
             transcript = "，图像转录，待核对" if item.get("source_type") == "vision_transcript" else ""
@@ -476,47 +494,48 @@ def _correction_value(field: str, value: Any) -> str:
     return text
 
 
-def _append_actions(story: list[Any], report: dict[str, Any], styles: dict[str, ParagraphStyle]) -> None:
+def _append_actions(story: list[Any], report: dict[str, Any], styles: dict[str, ParagraphStyle], *, title: str, start: int = 0, limit: int | None = None) -> None:
     narrative = report.get("narrative") if isinstance(report.get("narrative"), dict) else {}
-    _section(story, "我该怎么办", styles)
     actions = narrative.get("actions") if isinstance(narrative.get("actions"), list) else []
+    actions = [action for action in actions if isinstance(action, dict)]
+    if limit is not None:
+        actions = actions[:limit]
+    else:
+        actions = actions[start:]
+    if not actions:
+        return
+    _section(story, title, styles)
     rules = report.get("rules") if isinstance(report.get("rules"), list) else []
     titles_by_id = {
         str(rule.get("rule_id")): _plain(rule.get("title"), fallback="", maximum=500)
         for rule in rules
         if isinstance(rule, dict) and rule.get("rule_id") is not None
     }
-    if actions:
-        for index, action in enumerate(actions[:100], 1):
-            if not isinstance(action, dict):
-                continue
-            reference = action.get("rule_id")
-            action_paragraph = _paragraph(f"{index}. {_plain(action.get('text'), maximum=12000)}", styles["body"], maximum=12500)
-            if reference is not None:
-                action_paragraph.keepWithNext = 1
-            story.append(action_paragraph)
-            if reference is not None:
-                reference_id = _plain(reference, maximum=100)
-                reference_title = titles_by_id.get(str(reference), "")
-                reference_text = f"对应依据：{reference_id} {reference_title}".strip()
-                story.append(_paragraph(reference_text, styles["small"], maximum=700))
-    else:
-        story.append(_paragraph("报告未提供单独的行动建议。", styles["body"]))
+    for index, action in enumerate(actions[:100], start + 1):
+        reference = action.get("rule_id")
+        action_paragraph = _paragraph(f"{index}. {_plain(action.get('text'), maximum=12000)}", styles["body"], maximum=12500)
+        if reference is not None:
+            action_paragraph.keepWithNext = 1
+        story.append(action_paragraph)
+        if reference is not None:
+            reference_id = _plain(reference, maximum=100)
+            reference_title = titles_by_id.get(str(reference), "")
+            reference_text = f"对应依据：{reference_id} {reference_title}".strip()
+            story.append(_paragraph(reference_text, styles["small"], maximum=700))
 
 
 def _append_report_limits(story: list[Any], report: dict[str, Any], styles: dict[str, ParagraphStyle]) -> None:
     narrative = report.get("narrative") if isinstance(report.get("narrative"), dict) else {}
     corrections = report.get("corrections") if isinstance(report.get("corrections"), list) else []
+    _section(story, "更正记录与报告局限", styles)
     if corrections:
-        _section(story, "更正记录", styles)
         for correction in corrections[:200]:
             if not isinstance(correction, dict):
                 continue
             field = _plain(correction.get("field"), maximum=300)
             before = _correction_value(field, correction.get("before"))
             after = _correction_value(field, correction.get("after"))
-            story.append(_paragraph(f"{field}：{before} → {after}", styles["body"], maximum=2400))
-    _section(story, "报告局限", styles)
+            story.append(_paragraph(f"信息更正：{field}：{before} → {after}", styles["small"], maximum=2400))
     limitations = narrative.get("limitations") if isinstance(narrative.get("limitations"), list) else []
     if limitations:
         for index, item in enumerate(limitations[:100], 1):
@@ -525,7 +544,7 @@ def _append_report_limits(story: list[Any], report: dict[str, Any], styles: dict
         story.append(_paragraph("未提供单独的报告局限说明。", styles["body"]))
     generation = report.get("generation") if isinstance(report.get("generation"), dict) else {}
     if generation.get("mode") == "template":
-        story.append(_paragraph(f"本报告由确定性模板生成。错误代码：{_plain(generation.get('error_code'))}。", styles["small"]))
+        story.append(_paragraph("本报告使用确定性模板生成，以完整保留费用计算与规则核查结果。", styles["small"]))
     story.append(Spacer(1, 4))
     story.append(_paragraph(report.get("disclaimer"), styles["small"], fallback="本报告基于提供材料进行事实比对，不构成法律意见或借贷建议。", maximum=1000))
 
@@ -609,10 +628,10 @@ def create_report_pdf(payload: Any) -> bytes:
     )
     width = document.width
     generation = report.get("generation") if isinstance(report.get("generation"), dict) else {}
-    mode_label = "确定性模板" if generation.get("mode") == "template" else "报告撰写"
+    mode_label = "规则模板" if generation.get("mode") == "template" else "AI 撰写"
     story: list[Any] = [
         _paragraph(report.get("title"), styles["title"], maximum=300),
-        _paragraph(f"生成时间：{_plain(report.get('generated_at'))}；生成方式：{mode_label}", styles["subtitle"]),
+        _paragraph(f"生成时间：{_timestamp(report.get('generated_at'))}；生成方式：{mode_label}", styles["subtitle"]),
     ]
     facts = report.get("facts") if isinstance(report.get("facts"), dict) else {}
     loan = facts.get("loan") if isinstance(facts.get("loan"), dict) else {}
@@ -630,9 +649,10 @@ def create_report_pdf(payload: Any) -> bytes:
         story.append(_paragraph("模拟数据样例；不含真实个人信息；非实际核查结果", styles["small"]))
 
     conclusion = report.get("conclusion") if isinstance(report.get("conclusion"), dict) else {}
-    conclusion_label = _plain(export_data.get("conclusion_label"), fallback="核查结论", maximum=100)
-    summary = _plain(conclusion.get("summary"), maximum=12000)
-    story.append(_paragraph(conclusion_label, styles["section"], maximum=100))
+    narrative = report.get("narrative") if isinstance(report.get("narrative"), dict) else {}
+    summary = _plain(narrative.get("summary"), fallback=_plain(conclusion.get("summary"), maximum=12000), maximum=12000)
+    summary_label = "AI 概要" if generation.get("mode") != "template" else "核查概要"
+    story.append(_paragraph(summary_label, styles["section"], maximum=100))
     story.append(_paragraph(summary, styles["callout"], maximum=12500))
     counts = conclusion.get("counts") if isinstance(conclusion.get("counts"), dict) else {}
     count_labels = (
@@ -649,8 +669,10 @@ def create_report_pdf(payload: Any) -> bytes:
     if count_text:
         story.append(_paragraph("；".join(count_text), styles["small"]))
 
+    _append_key_metrics(story, report, styles, width)
+    _append_actions(story, report, styles, title="先做什么", limit=5)
     _append_calculation(story, report, styles, width)
-    _append_actions(story, report, styles)
+    _append_actions(story, report, styles, title="其余核实建议", start=5)
     _append_fees(story, report, styles)
     _append_rules(story, report, export_data, styles)
     _append_other_rates(story, report, styles, width)

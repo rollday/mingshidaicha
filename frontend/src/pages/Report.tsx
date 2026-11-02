@@ -9,6 +9,7 @@ import { Glossary } from '../components/report/Glossary.tsx';
 import { LenderCheck } from '../components/report/LenderCheck.tsx';
 import { MonthlyCard } from '../components/report/MonthlyCard.tsx';
 import { RuleList } from '../components/report/RuleList.tsx';
+import { SummaryCard } from '../components/report/SummaryCard.tsx';
 import { VerdictCard } from '../components/report/VerdictCard.tsx';
 
 export default function Report({
@@ -94,6 +95,7 @@ export default function Report({
       {pdfError ? <p className="-mt-5 text-sm text-red" role="alert">{pdfError}</p> : null}
 
       <div className="flex flex-col gap-6">
+        <SummaryCard report={report} />
         <VerdictCard report={report} />
         <FeeTable report={report} />
         <ActionList report={report} />
