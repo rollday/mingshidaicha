@@ -64,3 +64,14 @@ test('AI cannot label an explicitly nominal calculation as an assumed simple rat
   const partial=await generateReport(model,{facts,calculation:null,calculation_error:null,rules:[],evidence:[],corrections:[]},new AbortController().signal,()=>{});
   assert.equal(partial.generation.mode,'template');assert.doesNotMatch(partial.conclusion.summary,/单利推定/);
 });
+
+test('AI may explicitly negate an assumed simple-rate comparison', async () => {
+  const {generateReport}=await import('../src/report.ts');
+  const facts=caseFactsSchema.parse({disclosure:{quoted_apr:'0.1',quoted_method:'nominal'}});
+  const calculation={input:{},calculation:{cashflows:[],nominal_apr:'0.1',effective_apr:'0.105',simple_apr:null,xirr_apr:null,comparison:{method:'nominal',method_basis:'explicit' as const,disclosed_method:'nominal',quoted_apr:'0.1',computed_apr:'0.1',gap_pp:'0',exceeds_tolerance:false}},summary:{principal:'1000',disbursed:'1000',total_repayment:'1100',total_additional_fees:'0',total_cost:'100'},fee_totals:[]};
+  const model=new CaseModel({...config,apiKey:undefined});
+  model.json=async()=>({summary:'并非按单利推定，本次按明示表标注的名义年化口径比较。',findings:[],actions:[],limitations:['以确认的资料为准。']});
+  const report=await generateReport(model,{facts,calculation,calculation_error:null,rules:[],evidence:[],corrections:[]},new AbortController().signal,()=>{});
+  assert.equal(report.generation.mode,'ai');
+  assert.match(report.conclusion.summary,/名义年化口径比较/);
+});

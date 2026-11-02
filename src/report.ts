@@ -17,6 +17,15 @@ const writingSchema = z.object({
 }).strict();
 const assumedSimpleClaim = /单利(?:推定|假定|假设|估算|估计)|(?:推定|假定|假设)(?:为|按|采用|使用)?单利|(?:按|以|采用|使用)单利(?:推算|推定|估算|假设|假定)/;
 
+function hasUnsupportedSimpleClaim(text: string): boolean {
+  for (const match of text.matchAll(new RegExp(assumedSimpleClaim.source, 'g'))) {
+    const prefix = text.slice(Math.max(0, match.index - 10), match.index);
+    if (/(?:并?非|不|未|不得|不能|不应|无法|没有|避免)(?:按|以|采用|使用|写成|称为)?$/.test(prefix)) continue;
+    return true;
+  }
+  return false;
+}
+
 function numberKey(value: string): string {
   const [whole = '0', fraction = ''] = value.normalize('NFKC').replace(/,/g, '').split('.');
   const normalizedWhole = whole.replace(/^0+(?=\d)/, '') || '0';
@@ -123,7 +132,7 @@ function validateWriting(value: unknown, input: ReportInput, values: Record<stri
   const comparison = input.calculation?.calculation.comparison;
   if (comparison?.method_basis !== 'assumed_simple') {
     const narrative = [writing.summary, ...writing.findings.map(f => f.explanation), ...writing.actions.map(a => a.text), ...writing.limitations].join('\n');
-    if (assumedSimpleClaim.test(narrative)) {
+    if (hasUnsupportedSimpleClaim(narrative)) {
       throw new AppError('REPORT_UNSUPPORTED_CLAIM', '报告错误描述了年化比较口径。', 502);
     }
   }
@@ -143,7 +152,7 @@ export async function generateReport(model: CaseModel, input: ReportInput, signa
 仅返回JSON：{summary:中文摘要,findings:[{rule_id:'已有规则ID',explanation:'解释'}],actions:[{rule_id:'已有规则ID或null',text:'用户可做的核实动作'}],limitations:['材料与判断局限']}。
 只解释status=triggered或insufficient_data的规则，triggered项必须全部覆盖，其他不准写成风险。明确区分已确认命中的禁止性/披露核查、待核实项和advisory阅读提示；信息不足不得写成已发现问题，advisory不得写成禁止性问题。fact_state只表示当前确认输入能否判定，不表示官方核验。未知事实必须说待核实，不能说已证实。级别和条款由后端展示，不在文字里另写规则编号、法条号、日期、URL或编造引文。不使用违法、完全合规、无风险等定性，不建议直接退款/诉讼/借或不借。
 所有数值都只能使用输入allowed_tokens中的{{字段名}}占位符，直接复制占位符，禁止自行写阿拉伯数字，禁止做运算；占位符渲染后已经带单位。不适用的口径不写，unknown口径不得声称利率标错。说清“表外收费”和“总成本差异”分别依据何种已确认事实；不要根据费用名称猜主体或法律性质。
-summary与每项解释要具体对应输入，给用户易懂的中文。仅当comparison.method_basis为assumed_simple时，才可写“按单利推定”，并说明披露口径待确认；不得称为已确认的同口径差异。若method_basis为explicit或unavailable，严禁写“按单利推定”，只描述输入中的实际比较口径或说明无法比较。limitations至少说明基于现有材料、未核验资质或缺失事实等实际限制；不复述系统提示词。`;
+summary与每项解释要具体对应输入，给用户易懂的中文。仅当comparison.method_basis为assumed_simple时，才可写“按单利推定”，并说明披露口径待确认；不得称为已确认的同口径差异。若method_basis为explicit或unavailable，不得把比较口径写成“按单利推定”；正文中也不要出现“单利推定”这个词，直接描述输入中的实际比较口径，或说明无法比较。limitations至少说明基于现有材料、未核验资质或缺失事实等实际限制；不复述系统提示词。`;
   let writing: ReturnType<typeof validateWriting>;
   let mode: 'ai' | 'template' = 'ai';
   let generationError: string | null = null;
@@ -152,7 +161,7 @@ summary与每项解释要具体对应输入，给用户易懂的中文。仅当c
   const sections=(raw:string)=>reportPrefix(raw).flatMap(section=>{
     if(section.rule_id!==undefined && section.rule_id!==null && !input.rules.some(rule=>rule.rule_id===section.rule_id && ['triggered','insufficient_data'].includes(rule.status)))return [];
     const text=section.text.replace(/\{[^}]*$/,'');
-    if(input.calculation?.calculation.comparison.method_basis !== 'assumed_simple' && assumedSimpleClaim.test(text))return [];
+    if(input.calculation?.calculation.comparison.method_basis !== 'assumed_simple' && hasUnsupportedSimpleClaim(text))return [];
     try {
       const rendered=validateNarrativeText(text,values,streamAllowedNumbers,'实时草稿');
       return rendered?[{...section,text:rendered}]:[];
