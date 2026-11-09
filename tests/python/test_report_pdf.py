@@ -1,12 +1,14 @@
 import copy
 import json
+import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 import pymupdf as fitz
 
 from python.pdf_tools import PdfError
-from python.report_pdf import create_report_pdf
+from python.report_pdf import _find_font, _register_fonts, create_report_pdf
 
 
 FIXTURE = Path(__file__).resolve().parents[1] / "fixtures" / "report-pdf-sample.json"
@@ -24,6 +26,33 @@ def sample_payload():
 
 
 class ReportPdfTests(unittest.TestCase):
+    def test_font_selection_prefers_system_then_user_and_reports_missing(self):
+        with tempfile.TemporaryDirectory() as directory:
+            home = Path(directory)
+            system = home / "system" / "uming.ttc"
+            user = home / ".local/share/fonts/arphic/uming.ttc"
+            self.assertIsNone(_find_font(system, home))
+            user.parent.mkdir(parents=True)
+            user.touch()
+            self.assertEqual(_find_font(system, home), user)
+            system.parent.mkdir()
+            system.touch()
+            self.assertEqual(_find_font(system, home), system)
+
+    def test_missing_and_invalid_font_errors_are_preserved(self):
+        with patch("python.report_pdf._FONTS_READY", False), patch("python.report_pdf._find_font", return_value=None):
+            with self.assertRaises(PdfError) as error:
+                _register_fonts()
+            self.assertEqual(error.exception.code, "PDF_FONT_MISSING")
+            self.assertIn("scripts/setup-pdf-font.sh", str(error.exception))
+        with tempfile.TemporaryDirectory() as directory:
+            invalid_font = Path(directory) / "uming.ttc"
+            invalid_font.write_bytes(b"not a font")
+            with patch("python.report_pdf._FONTS_READY", False), patch("python.report_pdf._find_font", return_value=invalid_font):
+                with self.assertRaises(PdfError) as error:
+                    _register_fonts()
+                self.assertEqual(error.exception.code, "PDF_FONT_INVALID")
+
     def test_pdf_embeds_uming_and_preserves_chinese_digits_separators_and_report_sections(self):
         pdf = create_report_pdf(sample_payload())
         self.assertTrue(pdf.startswith(b"%PDF-"))

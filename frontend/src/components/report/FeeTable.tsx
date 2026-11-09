@@ -7,6 +7,7 @@ const columns: Column[] = [
   { key: 'name', label: '费用项目' },
   { key: 'amount', label: '单次金额', align: 'right' },
   { key: 'total', label: '核算合计', align: 'right' },
+  { key: 'accounting', label: '费用计入方式' },
   { key: 'payee', label: '收取主体' },
   { key: 'disclosure', label: '明示表' },
 ];
@@ -14,11 +15,23 @@ const payeeNames: Record<CaseFacts['fees'][number]['payee_type'], string> = {
   lender: '放贷方', platform: '平台', guarantor: '担保方', other: '其他主体', unknown: '主体待确认',
 };
 
+function feeAccountingLabel(fee: CaseFacts['fees'][number]): string {
+  if (fee.contingent === true) return '或有费用，不计入常规成本';
+  if (fee.contingent === null) return '费用发生条件待确认';
+  if (fee.included_in_cashflows === null) return '计入方式待确认';
+  if (fee.included_in_cashflows === false) return '另计入现金流';
+  if (fee.timing === 'unknown') return '计入位置待确认';
+  return fee.timing === 'upfront' || (fee.timing === 'specific_period' && fee.period === 0)
+    ? '已在到账净额中扣除（不重复扣款）'
+    : '已含在还款额中（不重复加收）';
+}
+
 export function FeeTable({ report }: { report: AuditReport }) {
   const totals = new Map((report.calculation?.fee_totals ?? []).map((item) => [item.id, item]));
   const regular = report.facts.fees.filter((fee) => fee.contingent === false);
   const unknown = report.facts.fees.filter((fee) => fee.contingent === null);
   const contingent = report.facts.fees.filter((fee) => fee.contingent === true);
+  const unconfirmedAccounting = regular.filter((fee) => fee.included_in_cashflows === null);
   const rowsFor = (fees: typeof report.facts.fees) => fees.map((fee) => {
     const total = totals.get(fee.id);
     const totalLabel = fee.contingent === true
@@ -30,6 +43,7 @@ export function FeeTable({ report }: { report: AuditReport }) {
       name: <span className="flex flex-wrap items-center gap-2">{fee.name}{fee.contingent === true ? <Tag tone="amber">或有费用</Tag> : null}</span>,
       amount: fee.amount === null ? '待确认' : money(fee.amount),
       total: totalLabel,
+      accounting: feeAccountingLabel(fee),
       payee: <span>{fee.payee ?? '主体待确认'}<span className="ml-1 text-xs text-mute">· {payeeNames[fee.payee_type]}</span></span>,
       disclosure: <Tag tone="neutral">{triState(fee.in_disclosure)}</Tag>,
     };
@@ -50,10 +64,13 @@ export function FeeTable({ report }: { report: AuditReport }) {
             <p className="text-sm text-ink-soft">还款计划 {money(report.calculation.summary.total_repayment)} + 另付费用 {money(report.calculation.summary.total_additional_fees)}。</p>
           </div>
         ) : <p className="text-sm text-mute">还款合计暂不可用。</p>}
+        {unconfirmedAccounting.length > 0 ? (
+          <p role="status" className="mt-3 rounded-md bg-canvas p-3 text-sm text-amber">{unconfirmedAccounting.map((fee) => fee.name).join('、')}的计入方式待确认；确认前无法给出最终实际年化（APR）。</p>
+        ) : null}
         {report.facts.fees.length ? (
           <ul className="mt-3 flex flex-col gap-2 text-sm">
             {report.facts.fees.slice(0, 2).map((fee) => <li key={fee.id} className="flex flex-wrap justify-between gap-x-3 gap-y-1 border-t border-line pt-2">
-              <span className="min-w-0 flex-1 truncate">{fee.name} <span className="text-mute">· {fee.contingent === null ? '发生条件待确认' : fee.contingent ? '或有费用' : fee.in_disclosure === null ? '明示状态待确认' : fee.in_disclosure ? '表内已列' : '表内未列'}</span></span>
+              <span className="min-w-0 flex-1">{fee.name} <span className="text-mute">· {fee.contingent === null ? '发生条件待确认' : fee.contingent ? '或有费用' : fee.in_disclosure === null ? '明示状态待确认' : fee.in_disclosure ? '表内已列' : '表内未列'}</span><span className="mt-1 block text-xs text-ink-soft">{feeAccountingLabel(fee)}</span></span>
               <span className="shrink-0 num">{fee.contingent === false && totals.has(fee.id) ? money(totals.get(fee.id)!.total) : fee.amount === null ? '金额待确认' : `${money(fee.amount)} / 次`}</span>
             </li>)}
             {report.facts.fees.length > 2 ? <li className="text-2xs text-mute">另有 {report.facts.fees.length - 2} 项，详见费用明细。</li> : null}
@@ -115,6 +132,7 @@ function FeeGroup({
           <dl className="mt-3 grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
             <dt className="text-mute">单次金额</dt><dd className="text-right num">{fee.amount === null ? '待确认' : money(fee.amount)}</dd>
             <dt className="text-mute">核算合计</dt><dd className="text-right num">{totalLabel}</dd>
+            <dt className="text-mute">费用计入方式</dt><dd className="text-right">{feeAccountingLabel(fee)}</dd>
             <dt className="text-mute">收取主体</dt><dd className="text-right">{fee.payee ?? '主体待确认'} · {payeeNames[fee.payee_type]}</dd>
             <dt className="text-mute">是否列在明示表</dt><dd className="text-right">{triState(fee.in_disclosure)}</dd>
           </dl>

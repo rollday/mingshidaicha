@@ -94,14 +94,20 @@ _SOURCE_STATUS = {
 }
 
 
+def _find_font(system_path: Path, home: Path) -> Path | None:
+    user_path = home / ".local/share/fonts/arphic/uming.ttc"
+    return next((path for path in (system_path, user_path) if path.is_file()), None)
+
+
 def _register_fonts() -> None:
     global _FONTS_READY
     if _FONTS_READY:
         return
-    if not _FONT_PATH.is_file():
-        raise PdfError("PDF_FONT_MISSING", "缺少简体中文 TrueType 字体，请安装 fonts-arphic-uming。")
+    font_path = _find_font(_FONT_PATH, Path.home())
+    if font_path is None:
+        raise PdfError("PDF_FONT_MISSING", "缺少简体中文 TrueType 字体，请安装 fonts-arphic-uming 或运行 scripts/setup-pdf-font.sh。")
     try:
-        pdfmetrics.registerFont(TTFont(_REGULAR, str(_FONT_PATH)))
+        pdfmetrics.registerFont(TTFont(_REGULAR, str(font_path)))
         pdfmetrics.registerFontFamily(_REGULAR, normal=_REGULAR, bold=_BOLD, italic=_REGULAR, boldItalic=_BOLD)
         _FONTS_READY = True
     except Exception as exc:

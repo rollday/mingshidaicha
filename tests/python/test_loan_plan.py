@@ -17,7 +17,63 @@ def facts(**loan_overrides):
             "disclosure": {"quoted_apr": None, "quoted_method": "unknown"}}
 
 
+def fee_case(disbursed="20000", payment="913.69", included=()):
+    case = facts(principal="20000", disbursed=disbursed, term_periods=24,
+                 period_payment=payment, nominal_apr=None)
+    case["fees"] = [
+        {"id": name, "name": name, "amount": amount, "timing": timing,
+         "included_in_cashflows": name in included, "contingent": False}
+        for name, amount, timing in (
+            ("upfront_a", "600", "upfront"),
+            ("upfront_b", "499", "upfront"),
+            ("upfront_c", "30", "upfront"),
+            ("guarantee", "120", "per_period"),
+            ("platform", "88", "per_period"),
+        )
+    ]
+    return case
+
+
 class LoanPlanTests(unittest.TestCase):
+    def test_separate_fees_enter_cashflows_and_rate(self):
+        result = calculate_loan(fee_case())
+        cashflows = result["calculation"]["cashflows"]
+        self.assertEqual([Decimal(row["amount"]) for row in cashflows],
+                         [Decimal("18871")] + [Decimal("-1121.69")] * 24)
+        self.assertEqual(Decimal(result["summary"]["total_cost"]), Decimal("8049.56"))
+        nominal = Decimal(result["calculation"]["nominal_apr"])
+        self.assertLess(abs(nominal - Decimal("0.36739117")), Decimal("0.00000001"))
+        monthly = nominal / Decimal(12)
+        npv = Decimal("18871") - sum(
+            (Decimal("1121.69") / (Decimal(1) + monthly) ** period
+             for period in range(1, 25)), Decimal(0))
+        self.assertLess(abs(npv), Decimal("0.000001"))
+
+    def test_included_and_mixed_fees_match_separate_fee_cashflows(self):
+        reference = calculate_loan(fee_case())
+        cases = [
+            fee_case(disbursed="18871", included=("upfront_a", "upfront_b", "upfront_c")),
+            fee_case(payment="1121.69", included=("guarantee", "platform")),
+            fee_case(disbursed="19400", payment="1033.69", included=("upfront_a", "guarantee")),
+        ]
+        for case in cases:
+            with self.subTest(disbursed=case["loan"]["disbursed"], payment=case["loan"]["period_payment"]):
+                result = calculate_loan(case)
+                self.assertEqual(result["calculation"]["cashflows"], reference["calculation"]["cashflows"])
+                self.assertEqual(Decimal(result["calculation"]["nominal_apr"]),
+                                 Decimal(reference["calculation"]["nominal_apr"]))
+                self.assertEqual(Decimal(result["summary"]["total_cost"]), Decimal("8049.56"))
+
+    def test_unknown_inclusion_of_each_fee_blocks_calculation(self):
+        for index in range(5):
+            with self.subTest(fee=index):
+                case = fee_case()
+                case["fees"][index]["included_in_cashflows"] = None
+                with self.assertRaises(CalculationError) as caught:
+                    calculate_loan(case)
+                self.assertEqual(caught.exception.code, "MISSING_FIELDS")
+                self.assertIn(f"fees[{index}].included_in_cashflows", caught.exception.details["fields"])
+
     def test_worker_calculate_loan_expands_fixed_payment_and_reports_summary(self):
         result = _dispatch({"operation": "calculate_loan", "payload": facts()})
         self.assertEqual(len(result["input"]["repayments"]), 12)
