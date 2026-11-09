@@ -8,7 +8,7 @@ export function CorrectionsNotice({ report }: { report: AuditReport }) {
       <header><h2 className="text-lg font-medium">报告局限与说明</h2></header>
       <Card padding="wide" className="flex flex-col gap-5">
         {report.corrections.length ? (
-          <div><h3 className="mb-3 text-base font-medium">修改过 {report.corrections.length} 处信息</h3><ul className="flex flex-col gap-3">{report.corrections.map((correction, index) => <li key={`${correction.field}-${index}`} className="flex flex-col gap-1 border-b border-line pb-3 last:border-0 last:pb-0"><span className="text-sm font-medium">{correction.field}</span><div className="grid gap-2 text-sm sm:grid-cols-[1fr_auto_1fr]"><CorrectionValue label="原识别" field={correction.field} value={correction.before} /><span className="hidden self-center text-mute sm:block">→</span><CorrectionValue label="确认后" field={correction.field} value={correction.after} /></div></li>)}</ul></div>
+          <div><h3 className="mb-3 text-base font-medium">修改过 {report.corrections.length} 处信息</h3><ul className="flex flex-col gap-3">{report.corrections.map((correction, index) => <li key={`${correction.field}-${index}`} className="flex flex-col gap-1 border-b border-line pb-3 last:border-0 last:pb-0"><span className="text-sm font-medium">{correctionLabel(correction)}</span><div className="grid gap-2 text-sm sm:grid-cols-[1fr_auto_1fr]"><CorrectionValue label="原识别" field={correction.field} value={correction.before} /><span className="hidden self-center text-mute sm:block">→</span><CorrectionValue label="确认后" field={correction.field} value={correction.after} /></div></li>)}</ul></div>
         ) : null}
         <div className={report.corrections.length ? 'border-t border-line pt-4' : ''}>
           <h3 className="text-base font-medium">报告局限</h3>
@@ -33,4 +33,17 @@ function CorrectionValue({ label, field, value }: { label: string; field: string
   else if (typeof value === 'object') display = JSON.stringify(value) ?? String(value);
   else display = String(value);
   return <p className="min-w-0 break-words"><span className="text-mute">{label}：</span>{display}</p>;
+}
+
+function correctionLabel(correction: AuditReport['corrections'][number]): string {
+  const fields: Record<string, string> = {
+    included_in_cashflows: '是否已含在到账或还款额中', included_in_disclosed_cost: '是否计入明示年化',
+    name: '费用名称', amount: '费用金额', contingent: '是否或有', timing: '发生时间', period: '指定期次',
+    payee: '收取主体', payee_type: '收取主体类型', in_disclosure: '是否列在明示表',
+  };
+  const match = /^fees\[(\d+)\]\.(.+)$/.exec(correction.field);
+  const metadata = correction as typeof correction & { fee_name?: string; fee_id?: string };
+  if (/^fees\[\d+\]$/.test(correction.field)) return `${metadata.fee_name ?? metadata.fee_id ?? correction.field} · ${correction.after === null ? '费用已删除' : '费用项目'}`;
+  if (match) return `${metadata.fee_name ?? (metadata.fee_id ? `费用（${metadata.fee_id}）` : `费用第 ${Number(match[1]) + 1} 项`)} · ${fields[match[2]!] ?? match[2]}`;
+  return metadata.fee_name ? `${metadata.fee_name} · ${fields[correction.field] ?? correction.field}` : correction.field;
 }

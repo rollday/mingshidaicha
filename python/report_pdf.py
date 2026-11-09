@@ -354,6 +354,59 @@ def _append_other_rates(story: list[Any], report: dict[str, Any], styles: dict[s
         story.append(_paragraph("；".join(f"{label} {value}" for label, value in rates) + "。", styles["body"]))
 
 
+def _fee_accounting(fee: dict[str, Any]) -> str:
+    if fee.get("contingent") is True:
+        return "或有费用，不计入常规成本"
+    if fee.get("contingent") is not False:
+        return "费用发生条件待确认"
+    included = fee.get("included_in_cashflows")
+    if included is False:
+        return "另计入现金流"
+    if included is not True:
+        return "计入方式待确认"
+    timing = fee.get("timing")
+    if timing == "unknown" or timing is None:
+        return "计入位置待确认"
+    if timing == "upfront" or (timing == "specific_period" and fee.get("period") == 0):
+        return "已在到账净额中扣除（不重复扣款）"
+    return "已含在还款额中（不重复加收）"
+
+
+def _append_fee_prefills(story: list[Any], report: dict[str, Any], styles: dict[str, ParagraphStyle]) -> None:
+    prefills = report.get("fee_prefills")
+    if not isinstance(prefills, list) or not prefills:
+        return
+    _section(story, "初始预填依据", styles)
+    story.append(_paragraph("以下记录初始识别时的预填来源；当前计入方式以费用明细为准。贷款或费用信息修改后，请重新核对原文。", styles["small"]))
+    facts = report.get("facts", {})
+    fees = facts.get("fees", []) if isinstance(facts, dict) else []
+    by_id = {str(fee.get("id")): fee for fee in fees if isinstance(fee, dict)}
+    evidence = report.get("evidence", [])
+    evidence_by_id = {str(item.get("id")): item for item in evidence if isinstance(item, dict)}
+    treatments = {"in_period_payment": "已含在还款额中", "deducted_from_disbursement": "已在到账净额中扣除", "separate_charge": "另计入现金流"}
+    for prefill in prefills[:200]:
+        if not isinstance(prefill, dict):
+            continue
+        fee_id = str(prefill.get("fee_id", ""))
+        fee = by_id.get(fee_id)
+        field = str(prefill.get("field", "")).rsplit(".", 1)[-1]
+        status = "预填后费用已删除" if fee is None else "按原文预填" if fee.get(field) is prefill.get("value") else "预填后已修改"
+        name = _plain(fee.get("name"), maximum=300) if fee else f"已删除费用（{fee_id}）"
+        treatment = treatments.get(prefill.get("treatment"), "计入方式待确认")
+        story.append(_paragraph(f"{name} · {status}；初始预填：{treatment}", styles["subsection"], maximum=700))
+        story.append(_paragraph(f"预填规则：{_plain(prefill.get('rule_id'), maximum=100)}；原因：{_plain(prefill.get('reason'), maximum=3000)}", styles["body"], maximum=3300))
+        if fee is not None:
+            story.append(_paragraph(f"当前计入方式：{_fee_accounting(fee)}", styles["small"]))
+        ids = prefill.get("evidence_ids", [])
+        linked = [evidence_by_id[str(item)] for item in ids if str(item) in evidence_by_id] if isinstance(ids, list) else []
+        for item in linked[:20]:
+            page = "" if item.get("page") is None else f"，第 {_plain(item.get('page'))} 页"
+            transcript = "，图像转录，待核对" if item.get("source_type") == "vision_transcript" else ""
+            story.append(_paragraph(f"材料 {_plain(item.get('document_id'), maximum=100)}{page}{transcript} 原文：{_plain(item.get('quote'), maximum=3000)}", styles["small"], maximum=3300))
+        if not linked:
+            story.append(_paragraph("原文摘录暂不可用，请核对原始材料。", styles["small"]))
+
+
 def _append_fees(story: list[Any], report: dict[str, Any], styles: dict[str, ParagraphStyle]) -> None:
     _section(story, "费用明细", styles)
     facts = report.get("facts") if isinstance(report.get("facts"), dict) else {}
@@ -373,7 +426,7 @@ def _append_fees(story: list[Any], report: dict[str, Any], styles: dict[str, Par
         total_text = _money(total) if contingent is False and total is not None else "或有费用" if contingent is True else "条件待确认"
         payee_type = _PAYEE_TYPES.get(_plain(fee.get("payee_type"), fallback="unknown", maximum=50), "主体待确认")
         timing = _FEE_TIMING.get(_plain(fee.get("timing"), fallback="unknown", maximum=50), "时间待确认")
-        details = f"收取主体：{_plain(fee.get('payee'))}（{payee_type}）；发生时间：{timing}；是否或有：{_tri(contingent)}；明示表：{_tri(fee.get('in_disclosure'))}；已计入现金流：{_tri(fee.get('included_in_cashflows'))}；已计入明示成本：{_tri(fee.get('included_in_disclosed_cost'))}"
+        details = f"收取主体：{_plain(fee.get('payee'))}（{payee_type}）；发生时间：{timing}；是否或有：{_tri(contingent)}；明示表：{_tri(fee.get('in_disclosure'))}；当前计入方式：{_fee_accounting(fee)}；已计入明示成本：{_tri(fee.get('included_in_disclosed_cost'))}"
         story.append(_paragraph(
             f"{_plain(fee.get('name'), maximum=300)}：单次金额 {_money(fee.get('amount'))}；报告核算合计 {total_text}",
             styles["subsection"],
@@ -542,6 +595,16 @@ def _append_report_limits(story: list[Any], report: dict[str, Any], styles: dict
             field = _plain(correction.get("field"), maximum=300)
             before = _correction_value(field, correction.get("before"))
             after = _correction_value(field, correction.get("after"))
+            name = correction.get("fee_name") or correction.get("fee_id")
+            match = re.fullmatch(r"fees\[(\d+)\](?:\.(.+))?", field)
+            if match:
+                labels = {"included_in_cashflows": "是否已含在到账或还款额中", "included_in_disclosed_cost": "是否计入明示年化",
+                          "name": "费用名称", "amount": "费用金额", "contingent": "是否或有", "timing": "发生时间",
+                          "period": "指定期次", "payee": "收取主体", "payee_type": "收取主体类型", "in_disclosure": "是否列在明示表"}
+                label = labels.get(match[2], match[2]) if match[2] else "费用已删除" if correction.get("after") is None else "费用项目"
+                field = f"{_plain(name, maximum=300) if name else f'费用第 {int(match[1]) + 1} 项'} · {label}"
+            elif name:
+                field = f"{_plain(name, maximum=300)} · {field}"
             story.append(_paragraph(f"信息更正：{field}：{before} → {after}", styles["small"], maximum=2400))
     limitations = narrative.get("limitations") if isinstance(narrative.get("limitations"), list) else []
     if limitations:
@@ -602,7 +665,7 @@ def _validate(payload: Any) -> tuple[dict[str, Any], dict[str, Any]]:
         raise PdfError("INVALID_REPORT", "报告标题缺失或过长。")
     if not isinstance(report.get("generated_at"), str) or len(report["generated_at"]) > 100:
         raise PdfError("INVALID_REPORT", "报告生成时间格式不正确。")
-    for key, maximum in (("rules", 300), ("evidence", 2000), ("corrections", 200), ("fees", 100)):
+    for key, maximum in (("fee_prefills", 200), ("rules", 300), ("evidence", 2000), ("corrections", 200), ("fees", 100)):
         values = report.get(key, [])
         if key == "fees":
             facts = report.get("facts") if isinstance(report.get("facts"), dict) else {}
@@ -681,6 +744,7 @@ def create_report_pdf(payload: Any) -> bytes:
     _append_calculation(story, report, styles, width)
     _append_actions(story, report, styles, title="其余核实建议", start=5)
     _append_fees(story, report, styles)
+    _append_fee_prefills(story, report, styles)
     _append_rules(story, report, export_data, styles)
     _append_other_rates(story, report, styles, width)
     _append_facts(story, report, styles)

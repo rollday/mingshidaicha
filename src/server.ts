@@ -14,6 +14,7 @@ import { samples } from './samples.ts';
 import { rulePresentation } from '../shared/rule-policy.ts';
 import type { AuditReport } from './report.ts';
 import { reportExportSnapshotMatches } from './report-export.ts';
+import { serveStatic } from './static-assets.ts';
 
 type Session = {
   id: string; token: string; expires: number; sockets: Set<WebSocket>;
@@ -98,30 +99,24 @@ export async function createBackend(settings: Config = config) {
       if (req.headers.origin) {
         res.setHeader('access-control-allow-origin', req.headers.origin);
         res.setHeader('vary', 'Origin');
-        res.setHeader('access-control-allow-methods', 'GET, POST, DELETE, OPTIONS');
+        res.setHeader('access-control-allow-methods', 'GET, HEAD, POST, DELETE, OPTIONS');
         res.setHeader('access-control-allow-headers', 'Authorization, Content-Type, X-Session-Token');
       }
       if (closing) throw new AppError('SHUTTING_DOWN', '服务正在停止。', 503);
       if (req.method === 'OPTIONS') { res.writeHead(204); res.end(); return; }
       const pathname = new URL(req.url ?? '/', 'http://localhost').pathname;
-      if (req.method === 'GET' && (['/', '/debug', '/dev/components', '/app.js', '/app.css'].includes(pathname) || /^\/assets\/[a-zA-Z0-9_.-]+\.(?:js|css|svg|png|woff2)$/.test(pathname))) {
+      if ((req.method === 'GET' || req.method === 'HEAD') && (['/', '/debug', '/dev/components', '/app.js', '/app.css'].includes(pathname) || /^\/assets\/[a-zA-Z0-9_.-]+\.(?:js|css|svg|png|woff2)$/.test(pathname))) {
         let file: string;
         if (pathname === '/' || pathname === '/dev/components') file = 'ui/index.html';
         else if (pathname === '/debug') file = 'index.html';
         else file = pathname.startsWith('/assets/') ? 'ui' + pathname : pathname.slice(1);
-        let content: Buffer;
-        try { content = await readFile(resolve('public', file)); }
+        try { await serveStatic(req, res, pathname, resolve('public', file)); }
         catch (error) {
           if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
           if (pathname !== '/') throw new AppError('NOT_FOUND', '页面或静态资源不存在。', 404);
-          file = 'index.html'; content = await readFile(resolve('public', file));
+          await serveStatic(req, res, pathname, resolve('public', 'index.html'));
         }
-        const extension = file.split('.').at(-1)!;
-        const mime: Record<string,string> = { html:'text/html; charset=utf-8',css:'text/css; charset=utf-8',js:'text/javascript; charset=utf-8',svg:'image/svg+xml',png:'image/png',woff2:'font/woff2' };
-        res.writeHead(200, { 'content-type': mime[extension] ?? 'application/octet-stream',
-          'cache-control': 'no-store', 'x-content-type-options': 'nosniff',
-          'content-security-policy': "default-src 'self'; script-src 'self'; style-src 'self'; style-src-attr 'unsafe-inline'; connect-src 'self'; img-src 'self' blob: data:; frame-src 'none'; object-src 'none'; base-uri 'none'; form-action 'self'" });
-        res.end(content); return;
+        return;
       }
       if (req.method === 'GET' && pathname === '/api/samples') return json(res, 200, samples);
       if (req.method === 'GET' && pathname === '/api/health') {

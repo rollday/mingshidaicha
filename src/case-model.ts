@@ -3,8 +3,9 @@ import { z } from 'zod';
 import type { ChatCompletionContentPart, ChatCompletionCreateParamsStreaming } from 'openai/resources/chat/completions';
 import type { Config } from './config.ts';
 import { AppError } from './errors.ts';
-import { caseExtractionSchema, caseFactsSchema, type SourceMaterial } from './domain.ts';
+import { caseExtractionSchema, caseFactsSchema, type SourceMaterial, type CaseExtraction } from './domain.ts';
 import { guardFeeInclusion } from './fee-inclusion.ts';
+import { inferFeePrefills } from '../shared/fee-prefill.ts';
 
 export function locateQuote(source: string, quote: string): string | null {
   if (source.includes(quote)) return quote;
@@ -85,7 +86,7 @@ fees逐项结构为{id:'f1',name,amount:字符串或null,timing:'upfront'|'per_p
 disclosure.present表示是否提供明示表。quoted_method仅明确标注时用nominal/effective/simple/xirr，否则unknown；quoted_apr百分比规范为小数。items_complete仅核对本金、费用名称、收取方式、标准和主体等必要列项，明确列项不完整才填false；合同另有费用未列入明示表应体现在该费用的in_disclosure，不直接断言必要列项缺失。未上传、无法找到字段、材料不完整或仅留空但无法确认要求是否适用时填null。contingent_disclosed表示或有费用披露情况：原文明确披露逾期、罚息、违约金等具体收费条款时引用原文；不能仅因未看到某个关键词就填false，也不能仅凭出现一个关键词断言完整披露，无法判断填null。in_disclosure必须对照提供的完整明示表，不能因为未上传就填false。
 funds_to为borrower/training_provider/third_party/unknown；marketing_phrases仅摘录确有的话术。
 每个关键金额、期数、利率、收费主体、学生身份、产品属性、明示表和或有费用披露判断应带evidence，field使用facts内路径如loan.principal或fees[0].amount。quote必须逐字存在于指定document_id和page的原文，不要用省略号或改写。id唯一。跨文档冲突写conflicts:{field,description,evidence_ids}，对应事实填null/unknown等用户确认。questions仅问用户能回答的事实。没有证据就保留未知，不要为了填满JSON猜测。`;
-    const inclusionInstruction = `\n费用included_in_cashflows表示费用是否已经反映在本次选用的loan.disbursed、loan.period_payment或repayments金额内，而不是是否同日、同渠道、一起收取。“与每期本息一并扣划”“统一代扣”本身不能证明已经包含；若只写每期本息及另外列出的费用，不能据此填true。true必须有fees[i].included_in_cashflows逐字证据，摘录应同时包含该费用名称、费用金额、实际选用的含费还款总额或扣费后的净到账金额以及明确包含/扣除关系。每期本息913.69元加管理费120元、保障费88元与每期含费合计1121.69元是不同金额；这些仅为说明，不是本案事实，不能照抄。若选择1121.69元且原文明示其含上述费用才可以填true；明确在913.69元之外另收才填false。放款时扣费只有在选用实际扣费后到账净额时才填true，不能对未扣费本金金额填true。明示年化已经包含费用不等于现金流金额已经包含。原文无法证明、金额不匹配或有冲突时填null并提问，不要猜false。`;
+    const inclusionInstruction = `\n费用included_in_cashflows表示费用是否已经反映在本次选用的loan.disbursed、loan.period_payment或repayments金额内，而不是是否同日、同渠道、一起收取。“与每期本息一并扣划”“统一代扣”本身不能证明已经包含；若只写每期本息及另外列出的费用，不能据此填true。true必须有fees[i].included_in_cashflows逐字证据，摘录应同时包含该费用名称、费用金额、实际选用的含费还款总额或扣费后的净到账金额以及明确包含/扣除关系。每期本息913.69元加管理费120元、保障费88元与每期含费合计1121.69元是不同金额；这些仅为说明，不是本案事实，不能照抄。若选择1121.69元且原文明示其含上述费用才可以填true；明确在913.69元之外另收才填false。放款时扣费只有在选用实际扣费后到账净额时才填true，不能对未扣费本金金额填true。明示年化已经包含费用不等于现金流金额已经包含。原文无法证明、金额不匹配或有冲突时填null并提问，不要猜false。即使included_in_cashflows尚不确定，也要为此字段摘录完整费用条款及同段到账/还款金额，保留另收、包含或一并扣划的上下文，供确定性预填规则核对。loan.repay_method、loan.periods_per_year、loan.term_periods、loan.nominal_apr分别提供原文依据（例如等额本息、按月、期数、合同月/年利率），没有原文不要补造；不要自行计算本息来代替证据。`;
     const content = JSON.stringify({ context: context ?? {}, materials });
     const retryBudget = { remaining: 1 };
     let raw = await this.json(instruction + inclusionInstruction, content, signal, progress, undefined, undefined, retryBudget);
@@ -98,7 +99,7 @@ funds_to为borrower/training_provider/third_party/unknown；marketing_phrases仅
     }
     if (!parsed.success) throw new AppError('MODEL_INVALID_FIELDS', '业务事实抽取未通过结构校验，请重试或手工录入。', 502,
       { fields: parsed.error.issues.slice(0, 20).map(issue => ({ path: issue.path.join('.'), code: issue.code, message: issue.message })) });
-    const output = parsed.data;
+    const output: CaseExtraction = parsed.data;
     const ids = new Set<string>();
     for (const evidence of output.evidence) {
       if (ids.has(evidence.id)) throw new AppError('INVALID_EVIDENCE', '证据编号重复。', 502);
@@ -125,6 +126,27 @@ funds_to为borrower/training_provider/third_party/unknown；marketing_phrases仅
     for (const key of ['principal', 'disbursed', 'period_payment'] as const) check(`loan.${key}`, output.facts.loan[key], () => { output.facts.loan[key] = null; });
     for (const [i, fee] of output.facts.fees.entries()) check(`fees[${i}].amount`, fee.amount, () => { fee.amount = null; });
     guardFeeInclusion(output);
+    // These suggestions are grounded in already verified source quotations.
+    // They may resolve a model's unknown value, but never edit a user's facts.
+    output.fee_prefills = inferFeePrefills(output.facts, output.evidence, output.conflicts);
+    const resolved = new Set<string>();
+    for (const suggestion of output.fee_prefills) {
+      const fee = output.facts.fees.find(item => item.id === suggestion.fee_id);
+      if (!fee) continue;
+      fee.included_in_cashflows = suggestion.value;
+      resolved.add(suggestion.field);
+    }
+    for (const [index, fee] of output.facts.fees.entries()) {
+      const field = `fees[${index}].included_in_cashflows`;
+      if (fee.contingent === true || resolved.has(field)) continue;
+      // Unsupported false is as capable of double-counting as unsupported true
+      // is of omitting a fee. Model guesses in either direction stay unknown.
+      fee.included_in_cashflows = null;
+      if (!output.questions.some(item => item.field.replace(/^facts\./, '') === field)) {
+        output.questions.push({ field, question: `请核对“${fee.name}”是否已体现在所填到账或还款额中，现有原文尚不能确定计入方式。` });
+      }
+    }
+    output.questions = output.questions.filter(item => !resolved.has(item.field.replace(/^facts\./, '')));
     // Absence in the supplied material is not itself proof of a missing item.
     // Require an explicit negative statement before turning extraction into a
     // confirmed disclosure defect; the user can still confirm it manually.

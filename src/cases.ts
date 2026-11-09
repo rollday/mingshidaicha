@@ -1,7 +1,8 @@
 import { randomUUID } from 'node:crypto';
 import type { z } from 'zod';
 import { commandSchema } from './contracts.ts';
-import { caseFactsSchema, type CaseExtraction, type CaseFacts, type LoanResult, type RuleResult, type SourceMaterial } from './domain.ts';
+import { caseFactsSchema, type CaseExtraction, type CaseFacts, type Evidence, type LoanResult, type RuleResult, type SourceMaterial } from './domain.ts';
+import { inferFeePrefills, type FeePrefill } from '../shared/fee-prefill.ts';
 import { normalizeCaseFacts } from './facts.ts';
 import type { Config } from './config.ts';
 import { AppError } from './errors.ts';
@@ -19,6 +20,8 @@ type Document = { path: string; mime: string };
 type CaseRecord = {
   id: string; revision: number; status: 'review' | 'completed'; original: CaseFacts; facts: CaseFacts;
   extraction: CaseExtraction; materials: SourceMaterial[];
+  prefill_history: FeePrefill[];
+  manual_fee_ids: Set<string>;
   history: { revision: number; confirmed_at: string; changes: Correction[] }[];
   report: AuditReport | null;
   lender_search: LenderSearchResult | null;
@@ -35,6 +38,35 @@ export function differences(before: unknown, after: unknown, path = ''): Correct
   return [{ field: path, before: before ?? null, after: after ?? null }];
 }
 
+/** Fee identity survives display sorting and deletion; array positions do not. */
+export function caseDifferences(before: CaseFacts, after: CaseFacts): Correction[] {
+  const { fees: oldFees, ...oldFields } = before;
+  const { fees: newFees, ...newFields } = after;
+  const changes = differences(oldFields, newFields);
+  for (const [index, fee] of newFees.entries()) {
+    const previous = oldFees.find(item => item.id === fee.id);
+    const feeChanges = previous ? differences(previous, fee, `fees[${index}]`)
+      : [{ field: `fees[${index}]`, before: null, after: fee }];
+    changes.push(...feeChanges.map(change => ({ ...change, fee_id: fee.id, fee_name: fee.name })));
+  }
+  for (const [index, fee] of oldFees.entries()) if (!newFees.some(item => item.id === fee.id)) {
+    changes.push({ field: `fees[${index}]`, before: fee, after: null, fee_id: fee.id, fee_name: fee.name });
+  }
+  return changes;
+}
+
+export function remapFeeEvidence(evidence: Evidence[], source: CaseFacts, target: CaseFacts): Evidence[] {
+  return evidence.flatMap(item => {
+    const match = /^(?:facts\.)?fees\[(\d+)\](.*)$/.exec(item.field);
+    if (!match) return [item];
+    const id = source.fees[Number(match[1])]?.id;
+    const index = target.fees.findIndex(fee => fee.id === id);
+    // Keep the quotation for the historical prefill, but don't attribute a
+    // removed fee's evidence to another fee occupying its former position.
+    return [{ ...item, field: index < 0 ? `removed_fee.${id ?? 'unknown'}${match[2]}` : `fees[${index}]${match[2]}` }];
+  });
+}
+
 export class CaseWorkflow {
   settings: Config;
   model: CaseModel;
@@ -49,9 +81,14 @@ export class CaseWorkflow {
     return record;
   }
   view(record: CaseRecord) {
+    const provenance: { source_facts?: CaseFacts; fee_prefills?: FeePrefill[]; manual_fee_ids?: string[] } = {
+      source_facts: record.original, fee_prefills: [...new Map(record.prefill_history.map(item => [item.fee_id, item])).values()],
+      manual_fee_ids: [...record.manual_fee_ids],
+    };
     return { case_id: record.id, revision: record.revision, status: record.status, facts: record.facts,
+      ...provenance,
       evidence: record.extraction.evidence, questions: record.extraction.questions, conflicts: record.extraction.conflicts,
-      materials: record.materials, history: record.history, corrections: differences(record.original, record.facts), report: record.report, lender_search: record.lender_search,activities:record.activities,checked:record.checked };
+      materials: record.materials, history: record.history, corrections: caseDifferences(record.original, record.facts), report: record.report, lender_search: record.lender_search,activities:record.activities,checked:record.checked };
   }
   async execute(command: Command, signal: AbortSignal, emit: Emit, document: (id: string) => Document | undefined) {
     const send=emit;
@@ -113,7 +150,7 @@ export class CaseWorkflow {
       if (command.context?.purpose && command.context.purpose !== 'unknown') extraction.facts.borrower.purpose = command.context.purpose;
       extraction.facts = normalizeCaseFacts(extraction.facts);
       checkpoint();
-      const record: CaseRecord = { id: randomUUID(), revision: 0, status: 'review', original: structuredClone(extraction.facts), facts: structuredClone(extraction.facts), extraction, materials, history: [], report: null, lender_search: null,activities:pending,checked:null };
+      const record: CaseRecord = { id: randomUUID(), revision: 0, status: 'review', original: structuredClone(extraction.facts), facts: structuredClone(extraction.facts), extraction, materials, prefill_history: structuredClone(extraction.fee_prefills ?? []), manual_fee_ids: new Set(), history: [], report: null, lender_search: null,activities:pending,checked:null };
       activeRecord=record;
       log('review','completed',`已整理 ${extraction.evidence.length} 段原文依据、${extraction.questions.length} 项待确认信息，请先核对再计算`,{evidence_ids:extraction.evidence.slice(0,3).map(e=>e.id)},'analysis');
       this.records.set(record.id, record);
@@ -149,13 +186,25 @@ export class CaseWorkflow {
       const facts = normalizeCaseFacts(caseFactsSchema.parse(command.facts));
       const duplicateFees = new Set(facts.fees.map(f => f.id)).size !== facts.fees.length;
       if (duplicateFees) throw new AppError('DUPLICATE_FEE', '费用编号重复，请核对费用清单。');
-      record.history.push({ revision: record.revision + 1, confirmed_at: new Date().toISOString(), changes: differences(record.facts, facts) });
+      const requestedPrefills = new Set(command.prefill_fee_ids ?? []);
+      if (requestedPrefills.size) {
+        const suggestions = inferFeePrefills(facts, record.extraction.evidence, record.extraction.conflicts, record.original);
+        const verified = [...requestedPrefills].map(id => suggestions.find(item => item.fee_id === id && facts.fees.find(fee => fee.id === id)?.included_in_cashflows === item.value));
+        if (verified.some(item => !item)) throw new AppError('PREFILL_STALE', '预填依据与当前金额不再一致，请重新核对费用计入方式。', 422);
+        for (const item of verified as FeePrefill[]) if (!record.prefill_history.some(previous => JSON.stringify(previous) === JSON.stringify(item))) record.prefill_history.push(item);
+      }
+      const changes = caseDifferences(record.facts, facts);
+      for (const change of changes) if (change.fee_id && change.field.endsWith('.included_in_cashflows') && !requestedPrefills.has(change.fee_id)) record.manual_fee_ids.add(change.fee_id);
+      for (const id of requestedPrefills) record.manual_fee_ids.delete(id);
+      record.history.push({ revision: record.revision + 1, confirmed_at: new Date().toISOString(), changes });
       record.revision++;
       record.facts = structuredClone(facts);
       record.status = 'review'; record.report = null;
       record.lender_search = null;
       record.checked=null;
-      emit('case.confirmed', { case_id: record.id, revision: record.revision, corrections: differences(record.original, record.facts) });
+      const snapshot = this.view(record);
+      emit('case.confirmed', { case_id: record.id, revision: record.revision, corrections: snapshot.corrections,
+        source_facts: snapshot.source_facts, fee_prefills: snapshot.fee_prefills, manual_fee_ids: snapshot.manual_fee_ids });
     } else if (!record.history.length) throw new AppError('CONFIRMATION_REQUIRED', '请先核对并确认事实，再生成报告。', 409);
     checkpoint();
     log('calculate','started','将按确认的到账、还款和费用核算；已含费用与独立支付费用分开处理',{},'analysis');
@@ -173,14 +222,16 @@ export class CaseWorkflow {
     checkpoint();
     log('calculate',calculation?'completed':'warning',calculation?`核算完成：预计实际支付 ${displayDecimal(calculation.summary.total_payment)} 元，其中借款成本（不含还本）${displayDecimal(calculation.summary.total_cost)} 元`:'现有材料不足以完成核算，后续只展示已知事实与待补充项',{},'analysis');
     emit('task.progress', { stage: 'check_rules' });
-    const rules = evaluateRules(record.facts, calculation, record.extraction.evidence);
+    const reportEvidence = remapFeeEvidence(record.extraction.evidence, record.original, record.facts);
+    const rules = evaluateRules(record.facts, calculation, reportEvidence);
     record.checked={case_id:record.id,revision:record.revision,calculation,rules};
     emit('case.checked',record.checked);
     for(const rule of rules)log('check_rules','completed',`${rule.title}：${rule.reason}`,{rule_ids:[rule.rule_id],evidence_ids:rule.evidence_ids.slice(0,5)},'analysis');
     emit('task.progress', { stage: 'write_report' });
     const report = await generateReport(this.model, {
       facts: record.facts, calculation, calculation_error: calculationError,
-      rules, evidence: record.extraction.evidence, corrections: differences(record.original, record.facts),
+      rules, evidence: reportEvidence, corrections: caseDifferences(record.original, record.facts),
+      fee_prefills: record.prefill_history,
     }, signal, progress('write_report'),draft=>{
       emit('report.draft',draft);
       if(draft.status==='validating')log('validate_report','started',`第 ${draft.attempt} 次草稿已接收，正在校验金额占位符与规则引用`);

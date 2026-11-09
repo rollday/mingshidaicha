@@ -165,7 +165,7 @@ ws.onmessage = ({ data }) => {
 
 - 金额、利率和计算结果都用十进制字符串传输，前端显示和汇总不要先转 `Number`。`"0.12"` 表示 12%，`gap_pp` 用百分点。
 - `disbursements` 是实际到账，`repayments` 是实际还款总额。费用已体现在到账净额或还款总额中时，`included_in_cashflows:true`；否则会作为独立现金流扣除。不能同时重复计费。
-- 完整案件抽取中的 `fees[].included_in_cashflows` 使用 `true/false/null`：`true` 表示已体现在所填到账或还款额中，`false` 表示另外计入，`null` 表示待确认并暂停核算。“一并扣划”或“同日收取”不能单独证明费用已包含。模型声明 `true` 时，必须为该字段提供能对应费用名称、费用金额及所填净到账/含费还款总额的原文证据；无法核对、存在冲突或暂不支持的表述会保留为待确认，不自动改为另收。当前自动核对覆盖放款扣费及等额本息固定期供，显式还款计划或其他收费时点须人工核对；用户确认仍可采用已核实的计入方式。
+- 完整案件抽取中的 `fees[].included_in_cashflows` 使用 `true/false/null`：已体现在所填金额中、另计入、待确认。确定性规则核对费用名称、金额、所选到账/还款及原文后预填；模型未经证据支持的 `true/false` 均保留为待确认。核对页可一键采纳、定位依据并人工修改，修改金额后相关自动预填失效。计算结果含逐项 `fee_ledger` 和逐期 `reconciliation`，无法对账时不输出年化。规则适用范围、回归口径与修改理由见 [费用预填与现金流核对](docs/fee-prefill.md)。
 - `timing:"periodic"` 使用非负整数 `period`；`timing:"dated"` 使用 `date:"YYYY-MM-DD"`。不把日期流冒充等间隔期数。
 - Python 在 80 位 Decimal 上下文中构造现金流、年化和比较，IRR 求解使用 60 位精度。输出保留高精度，0.5pp 边界仅消除求解器收敛误差，不先按展示小数位舍入。
 - 定期现金流返回 `period_rate`、`nominal_apr`、`effective_apr`；只有两次净现金流时另给 `simple_apr`。日期现金流返回 ACT/365 的 `xirr_apr`。

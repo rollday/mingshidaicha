@@ -3,7 +3,7 @@ import test from 'node:test';
 import { config } from '../src/config.ts';
 import { commandSchema } from '../src/contracts.ts';
 import { caseFactsSchema } from '../src/domain.ts';
-import { CaseWorkflow } from '../src/cases.ts';
+import { CaseWorkflow, caseDifferences, remapFeeEvidence } from '../src/cases.ts';
 import { displayDecimal, generateReport, type ReportInput } from '../src/report.ts';
 import { CaseModel, locateQuote } from '../src/case-model.ts';
 import {LenderSearchService} from '../src/lender-search.ts';
@@ -41,7 +41,7 @@ test('confirmation completes calculation, checks, AI report and revision history
   assert.equal(report.calculation.summary.total_additional_fees, '660');
   assert.equal(report.rules.find((r: any) => r.rule_id === 'R02').status, 'triggered');
   assert.equal(report.rules.find((r: any) => r.rule_id === 'R03').status, 'triggered');
-  assert.deepEqual(report.corrections, [{ field: 'fees[0].amount', before: '50', after: '55' }]);
+  assert.deepEqual(report.corrections, [{ field: 'fees[0].amount', before: '50', after: '55', fee_id: 'service', fee_name: '服务费' }]);
   const snapshot = workflow.view(workflow.get(review.case_id));
   assert.equal(snapshot.revision, 1); assert.equal(snapshot.history.length, 1); assert.equal(snapshot.status, 'completed');
   await assert.rejects(workflow.execute({ type: 'case.confirm', request_id: 'stale', case_id: review.case_id, expected_revision: 0, facts: changed }, new AbortController().signal, emit, () => undefined), { code: 'REVISION_CONFLICT' });

@@ -78,6 +78,52 @@ class ReportPdfTests(unittest.TestCase):
         self.assertTrue(any("UMingCN" in font_name and font_data for font_name, _, _, font_data in embedded))
         document.close()
 
+    def test_fee_prefills_preserve_initial_reason_evidence_and_current_changes(self):
+        payload = sample_payload()
+        report = payload["report"]
+        fee = report["facts"]["fees"][0]
+        fee.update({"included_in_cashflows": False, "contingent": False})
+        report["fee_prefills"] = [{
+            "fee_id": fee["id"], "field": "fees[0].included_in_cashflows", "value": True,
+            "treatment": "in_period_payment", "rule_id": "fee-included-explicit",
+            "reason": "管理费明确包含在每期还款总额中。", "evidence_ids": ["prefill-original"],
+        }, {
+            "fee_id": "deleted-fee", "field": "fees[1].included_in_cashflows", "value": False,
+            "treatment": "separate_charge", "rule_id": "separate-explicit",
+            "reason": "该费用需要另行支付。", "evidence_ids": [],
+        }]
+        report["evidence"].append({"id": "prefill-original", "document_id": "contract", "page": 3,
+                                   "quote": "每期还款金额含管理费。<script>原文标签</script>"})
+        report["corrections"].append({"field": "fees[0].included_in_cashflows", "fee_id": fee["id"],
+                                      "fee_name": fee["name"], "before": True, "after": False})
+        document = fitz.open(stream=create_report_pdf(payload), filetype="pdf")
+        text = "\n".join(page.get_text() for page in document)
+        self.assertIn("初始预填依据", text)
+        self.assertIn("管理费明确包含在每期还款总额中", text)
+        self.assertIn("每期还款金额含管理费", text)
+        self.assertIn("<script>原文标签</script>", text)
+        self.assertIn("预填后已修改", text)
+        self.assertIn("预填后费用已删除", text)
+        self.assertIn("当前计入方式：另计入现金流", text)
+        self.assertNotIn("已计入现金流：", text)
+        self.assertIn("是 → 否", text)
+        document.close()
+
+    def test_unchanged_fee_prefill_displays_initial_disbursement_treatment(self):
+        payload = sample_payload()
+        fee = payload["report"]["facts"]["fees"][0]
+        fee.update({"included_in_cashflows": True, "contingent": False, "timing": "upfront"})
+        payload["report"]["fee_prefills"] = [{
+            "fee_id": fee["id"], "field": "fees[9].included_in_cashflows", "value": True,
+            "treatment": "deducted_from_disbursement", "rule_id": "net-disbursement",
+            "reason": "原始到账净额已扣除服务费。", "evidence_ids": [],
+        }]
+        document = fitz.open(stream=create_report_pdf(payload), filetype="pdf")
+        text = "\n".join(page.get_text() for page in document)
+        self.assertIn("按原文预填", text)
+        self.assertIn("已在到账净额中扣除（不重复扣款）", text)
+        document.close()
+
     def test_long_chinese_content_flows_across_pages_with_page_numbers(self):
         payload = sample_payload()
         report = copy.deepcopy(payload["report"])

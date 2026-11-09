@@ -6,9 +6,10 @@ import type { LenderSearchResult } from './lender-search.ts';
 import type {Activity,ReportDraft} from '../shared/progress.ts';
 import {reportPrefix} from './report-stream.ts';
 import {summarizeRules} from '../shared/rule-policy.ts';
+import type { FeePrefill } from '../shared/fee-prefill.ts';
 
-export type Correction = { field: string; before: unknown; after: unknown };
-export type ReportInput = { facts: CaseFacts; calculation: LoanResult | null; calculation_error: { code: string; message: string } | null; rules: RuleResult[]; evidence: Evidence[]; corrections: Correction[] };
+export type Correction = { field: string; before: unknown; after: unknown; fee_id?: string; fee_name?: string };
+export type ReportInput = { facts: CaseFacts; calculation: LoanResult | null; calculation_error: { code: string; message: string } | null; rules: RuleResult[]; evidence: Evidence[]; corrections: Correction[]; fee_prefills?: FeePrefill[] };
 const writingSchema = z.object({
   summary: z.string().min(1).max(1600),
   findings: z.array(z.object({ rule_id: z.string(), explanation: z.string().min(1).max(1600) }).strict()).max(10),
@@ -77,7 +78,8 @@ function fallbackSummary(input: ReportInput): string {
     .sort((left, right) => Number(right.rule_id === 'R03') - Number(left.rule_id === 'R03') || Number(right.rule_id === 'R02') - Number(left.rule_id === 'R02'));
   const pending = input.rules.filter(rule => rule.status === 'insufficient_data');
   const parts: string[] = [];
-  if (!input.calculation) parts.push('现有材料不足以完成成本核算。');
+  if (!input.calculation) parts.push(input.calculation_error?.code === 'CALCULATION_INCONSISTENT'
+    ? '已确认的金额与费用计入方式无法对账，暂不输出年化，请重新核对。' : '现有材料不足以完成成本核算。');
   if (confirmed.length) {
     const reasons = confirmed.slice(0, 2).map(rule => rule.reason.trim().replace(/[。；;]+$/, '')).filter(Boolean);
     parts.push(`本次核查确认 ${confirmed.length} 项需要关注：${reasons.join('；')}。`);
@@ -238,6 +240,7 @@ summary与每项解释要具体对应输入，给用户易懂的中文。summary
     conclusion: { level:grading.level, partial: !input.calculation,information_incomplete:!input.calculation||grading.counts.pending_checks>0,counts:grading.counts,summary: writing.summary },
     facts: input.facts, calculation: input.calculation, calculation_error: input.calculation_error,
     rules: input.rules, evidence: input.evidence, corrections: input.corrections, narrative: writing,
+    ...({ fee_prefills: input.fee_prefills ?? [] } as { fee_prefills?: FeePrefill[] }),
     disclaimer: '本报告基于提供材料进行事实比对，不构成法律意见或借贷建议。',
     public_source_search: null as LenderSearchResult | null,
     processing_activity: [] as Activity[],

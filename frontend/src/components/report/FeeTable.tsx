@@ -64,6 +64,8 @@ export function FeeTable({ report }: { report: AuditReport }) {
             <p className="text-sm text-ink-soft">还款计划 {money(report.calculation.summary.total_repayment)} + 另付费用 {money(report.calculation.summary.total_additional_fees)}。</p>
           </div>
         ) : <p className="text-sm text-mute">还款合计暂不可用。</p>}
+        {report.calculation_error?.code === 'CALCULATION_INCONSISTENT' ? <p role="alert" className="mt-3 text-sm text-amber">{report.calculation_error.message}</p> : null}
+        {report.calculation?.reconciliation && report.calculation.fee_ledger ? <p className="mt-2 text-xs text-mute">已按确认数据核对 {report.calculation.fee_ledger.filter(item => item.category !== 'contingent').length} 项正常费用的计入位置及逐期现金流。</p> : null}
         {unconfirmedAccounting.length > 0 ? (
           <p role="status" className="mt-3 rounded-md bg-canvas p-3 text-sm text-amber">{unconfirmedAccounting.map((fee) => fee.name).join('、')}的计入方式待确认；确认前无法给出最终实际年化（APR）。</p>
         ) : null}
@@ -76,6 +78,28 @@ export function FeeTable({ report }: { report: AuditReport }) {
             {report.facts.fees.length > 2 ? <li className="text-2xs text-mute">另有 {report.facts.fees.length - 2} 项，详见费用明细。</li> : null}
           </ul>
         ) : <p className="mt-2 text-sm text-mute">没有已确认的费用项目。</p>}
+        {report.fee_prefills?.length ? (
+          <div className="mt-4 border-t border-line pt-4">
+            <h3 className="text-sm font-medium">初始预填依据</h3>
+            <p className="mt-1 text-xs text-mute">以下记录初始识别时的预填来源；当前计入方式以上方费用明细为准。贷款或费用信息修改后，请重新核对原文。</p>
+            {report.fee_prefills.map((prefill, index) => {
+              const fee = report.facts.fees.find((item) => item.id === prefill.fee_id);
+              const current = fee ? (fee as unknown as Record<string, unknown>)[prefill.field.split('.').at(-1)!] : undefined;
+              const status = !fee ? '预填后费用已删除' : current === prefill.value ? '按原文预填' : '预填后已修改';
+              const sources = report.evidence.filter((item) => prefill.evidence_ids.includes(item.id));
+              return <details key={`${prefill.fee_id}-${prefill.field}-${index}`} className="mt-3 rounded-md bg-canvas p-3 text-sm">
+                <summary className="cursor-pointer">{fee?.name ?? `已删除费用（${prefill.fee_id}）`} · {status}</summary>
+                <p className="mt-2">初始预填：{{ in_period_payment: '已含在还款额中', deducted_from_disbursement: '已在到账净额中扣除', separate_charge: '另计入现金流' }[prefill.treatment]}；{prefill.reason}</p>
+                <p className="mt-1 text-xs text-mute">预填规则：{prefill.rule_id}</p>
+                {sources.map((source) => <blockquote key={source.id} className="mt-2 border-l-2 border-line pl-3">
+                  <p className="text-xs text-mute">材料 {source.document_id}{source.page === null ? '' : ` · 第 ${source.page} 页`}{source.source_type === 'vision_transcript' ? ' · 图像转录，待核对' : ''}</p>
+                  <p className="mt-1 whitespace-pre-wrap break-words">{source.quote}</p>
+                </blockquote>)}
+                {!sources.length ? <p className="mt-2 text-xs text-mute">原文摘录暂不可用，请核对原始材料。</p> : null}
+              </details>;
+            })}
+          </div>
+        ) : null}
         <details className="mt-3 border-t border-line pt-3">
           <summary className="cursor-pointer text-sm font-medium text-blue">查看全部费用与披露信息</summary>
           <div className="mt-4">

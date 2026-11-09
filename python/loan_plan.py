@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import calendar
 import re
+from collections import Counter
 from datetime import date
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP, localcontext
 from typing import Any
@@ -135,7 +136,7 @@ def _gen_standard(method: str, principal: Decimal, term: int, periods_per_year: 
 
 
 def _build_fees(fees: Any, term: int, timing: str, dates: list[date] | None,
-                start: date | None) -> tuple[list[dict[str, Any]], list[dict[str, Any]], Decimal]:
+                start: date | None) -> tuple[list[dict[str, Any]], list[dict[str, Any]], Decimal, list[dict[str, Any]]]:
     if not isinstance(fees, list):
         raise CalculationError("INVALID_INPUT", "fees must be an array")
     if len(fees) > 50:
@@ -143,6 +144,7 @@ def _build_fees(fees: Any, term: int, timing: str, dates: list[date] | None,
     calculation_fees: list[dict[str, Any]] = []
     fee_totals: list[dict[str, Any]] = []
     additional = _ZERO
+    ledger: list[dict[str, Any]] = []
     missing: list[str] = []
     for index, fee in enumerate(fees):
         path = f"fees[{index}]"
@@ -158,6 +160,8 @@ def _build_fees(fees: Any, term: int, timing: str, dates: list[date] | None,
             if any(not isinstance(fee.get(key), str) or not fee[key].strip() for key in ("id", "name")):
                 continue
             fee_totals.append({"id": fee["id"], "name": fee["name"], "total": "0", "contingent": True})
+            ledger.append({"fee_index": index, "id": fee["id"], "name": fee["name"],
+                           "category": "contingent", "total": "0", "occurrences": []})
             continue
         if contingent is not False:
             continue
@@ -193,10 +197,20 @@ def _build_fees(fees: Any, term: int, timing: str, dates: list[date] | None,
             at_period = -1
             total = _money(amount * term)
         fee_totals.append({"id": fee["id"], "name": fee["name"], "total": _fmt(total), "contingent": False})
+        targets = list(range(1, term + 1)) if fee_timing == "per_period" else [at_period]
+        category = ("deducted_from_disbursement" if targets == [0] else "included_in_repayment") if included else "additional_payment"
+        occurrences = []
+        for at in targets:
+            occurrence: dict[str, Any] = {"period": at, "amount": _fmt(amount)}
+            if timing == "dated":
+                assert start is not None and dates is not None
+                occurrence["date"] = (start if at == 0 else dates[at - 1]).isoformat()
+            occurrences.append(occurrence)
+        ledger.append({"fee_index": index, "id": fee["id"], "name": fee["name"],
+                       "category": category, "total": _fmt(total), "occurrences": occurrences})
         if included:
             continue
         additional += total
-        targets = range(1, term + 1) if fee_timing == "per_period" else (at_period,)
         for at in targets:
             row: dict[str, Any] = {"name": fee["name"], "amount": _fmt(amount), "included_in_cashflows": False}
             if timing == "dated":
@@ -211,7 +225,82 @@ def _build_fees(fees: Any, term: int, timing: str, dates: list[date] | None,
             calculation_fees.append(row)
     if missing:
         _missing(sorted(set(missing)))
-    return calculation_fees, fee_totals, additional
+    return calculation_fees, fee_totals, additional, ledger
+
+
+def _inconsistent(message: str, details: dict[str, Any]) -> None:
+    messages = {
+        "Fee ledger total does not match its occurrences": "费用合计与各期收费金额不一致，请核对收费计划。",
+        "Additional fee rows do not match the fee ledger": "另付费用与实际计入的收费明细不一致，暂无法核算。",
+        "Fees included in disbursement exceed the principal-to-disbursement difference": "标为已从到账扣除的费用超过本金与到账额的差额，请核对到账金额和费用计入方式。",
+        "Fees included in a repayment exceed that repayment": "标为已含的费用超过对应还款金额，请核对费用计入方式。",
+        "Included fees exceed the amount available above the standard principal and interest payment": "按所填合同利率及等额本息方式核对，还款额不足以同时包含本息和这些费用，请核对利率、还款额及费用计入方式。",
+        "Actual cash flows do not match the period ledger": "实际现金流与各期还款及另付费用不一致，暂无法核算。",
+    }
+    raise CalculationError("CALCULATION_INCONSISTENT", messages.get(message, "费用与还款金额无法对账，请核对后重新计算。"), details)
+
+
+def _reconcile(ledger: list[dict[str, Any]], fee_rows: list[dict[str, Any]],
+               payment_amounts: list[Decimal], principal: Decimal, disbursed: Decimal,
+               cashflows: list[dict[str, Any]] | None, timing: str, dates: list[date] | None,
+               start: date | None, standard_payments: list[Decimal] | None) -> dict[str, Any]:
+    included = [_ZERO] * (len(payment_amounts) + 1)
+    additional = [_ZERO] * (len(payment_amounts) + 1)
+    expected_rows: Counter[tuple[str, str, str]] = Counter()
+    for entry in ledger:
+        category = entry["category"]
+        occurrences = entry["occurrences"]
+        if sum((Decimal(o["amount"]) for o in occurrences), _ZERO) != Decimal(entry["total"]):
+            _inconsistent("Fee ledger total does not match its occurrences", {"fee_index": entry["fee_index"]})
+        for occurrence in occurrences:
+            at, amount = occurrence["period"], Decimal(occurrence["amount"])
+            if category in ("deducted_from_disbursement", "included_in_repayment"):
+                included[at] += amount
+            elif category == "additional_payment":
+                additional[at] += amount
+                key = str(at) if timing == "periodic" else occurrence["date"]
+                expected_rows[(entry["name"], key, _fmt(amount))] += 1
+    actual_rows = Counter((row["name"], str(row["period"]) if timing == "periodic" else row["date"],
+                           _fmt(Decimal(row["amount"]))) for row in fee_rows
+                          if row.get("included_in_cashflows") is False)
+    if expected_rows != actual_rows or len(fee_rows) != sum(actual_rows.values()):
+        _inconsistent("Additional fee rows do not match the fee ledger", {})
+    if included[0] > 0 and included[0] > principal - disbursed:
+        _inconsistent("Fees included in disbursement exceed the principal-to-disbursement difference",
+                      {"included": _fmt(included[0]), "difference": _fmt(principal - disbursed)})
+    for at, payment in enumerate(payment_amounts, 1):
+        if included[at] > payment:
+            _inconsistent("Fees included in a repayment exceed that repayment", {"period": at})
+        if standard_payments is not None and included[at] > 0:
+            # Allow accumulated cent rounding in the independently generated final installment.
+            tolerance = _CENT * (len(payment_amounts) + 1)
+            if included[at] + standard_payments[at - 1] > payment + tolerance:
+                _inconsistent("Included fees exceed the amount available above the standard principal and interest payment",
+                              {"period": at, "included": _fmt(included[at]),
+                               "payment": _fmt(payment), "standard_payment": _fmt(standard_payments[at - 1]),
+                               "rounding_tolerance": _fmt(tolerance)})
+    periods = []
+    expected_cashflows: dict[str, Decimal] = {}
+    for at in range(len(payment_amounts) + 1):
+        key = str(at) if timing == "periodic" else (start if at == 0 else dates[at - 1]).isoformat()  # type: ignore[union-attr,index]
+        payment = _ZERO if at == 0 else payment_amounts[at - 1]
+        net = (disbursed if at == 0 else _ZERO) - payment - additional[at]
+        if net:
+            expected_cashflows[key] = net
+        row = {"period": at, "repayment": _fmt(payment), "included_fees": _fmt(included[at]),
+               "additional_fees": _fmt(additional[at]), "net_cashflow": _fmt(net)}
+        if timing == "dated":
+            row["date"] = key
+        periods.append(row)
+    if cashflows is not None:
+        actual_cashflows = {str(row["period"]) if timing == "periodic" else row["date"]: Decimal(row["amount"])
+                            for row in cashflows}
+        if expected_cashflows != actual_cashflows:
+            _inconsistent("Actual cash flows do not match the period ledger", {})
+    return {"periods": periods, "total_repayment": _fmt(sum(payment_amounts, _ZERO)),
+            "total_additional_fees": _fmt(sum(additional, _ZERO)),
+            "total_payment": _fmt(sum(payment_amounts, _ZERO) + sum(additional, _ZERO)),
+            "net_cashflow_total": _fmt(sum(expected_cashflows.values(), _ZERO))}
 
 
 def calculate_loan(payload: Any) -> dict[str, Any]:
@@ -316,9 +405,13 @@ def calculate_loan(payload: Any) -> dict[str, Any]:
             # Contractual equal periods retain nominal/effective conventions even when a start date exists.
             payment_rows = _payment_rows(payment_amounts, timing=timing, dates=None)
 
-        fee_rows, fee_totals, total_additional_fees = _build_fees(
+        fee_rows, fee_totals, total_additional_fees, fee_ledger = _build_fees(
             payload.get("fees", []), term, timing, dates, start
         )
+        standard_payments = (_gen_standard(method, principal, term, periods_per_year, apr, None)
+                             if not explicit and method == "equal_installment" and apr is not None else None)
+        _reconcile(fee_ledger, fee_rows, payment_amounts, principal, disbursed, None,
+                   timing, dates, start, standard_payments)
         disbursement = {"amount": _fmt(disbursed)}
         if timing == "dated":
             if start is None:
@@ -343,6 +436,10 @@ def calculate_loan(payload: Any) -> dict[str, Any]:
             _number(quoted, "disclosure.quoted_apr", nonnegative=True)
             calculation_input["quoted_apr"] = quoted
         calculation_result = calculate(calculation_input)
+        reconciliation = _reconcile(fee_ledger, fee_rows, payment_amounts, principal, disbursed,
+                                    calculation_result["cashflows"], timing, dates, start, standard_payments)
+        if Decimal(reconciliation["total_additional_fees"]) != total_additional_fees:
+            _inconsistent("Additional fee total does not match the fee ledger", {})
         calendar_rows = None
         if timing == 'periodic' and dates is not None and start is not None:
             calendar_rows = _payment_rows(payment_amounts, timing='dated', dates=dates)
@@ -369,5 +466,7 @@ def calculate_loan(payload: Any) -> dict[str, Any]:
                 "total_cost": _fmt(total_repayment + total_additional_fees - disbursed),
             },
             "fee_totals": fee_totals,
+            "fee_ledger": fee_ledger,
+            "reconciliation": reconciliation,
             "calendar_schedule": calendar_rows,
         }

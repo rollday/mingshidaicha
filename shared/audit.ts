@@ -8,6 +8,7 @@ export type {Activity,ReportDraft,DraftSection} from './progress.ts';
 export type {RuleNature,RuleStatus,RuleLevel,RuleFactState} from './rule-policy.ts';
 export type { CaseFacts, Evidence, LoanResult, RuleResult, SourceMaterial } from '../src/domain.ts';
 export type { AuditReport, Correction } from '../src/report.ts';
+export type { FeePrefill } from './fee-prefill.ts';
 export type { LenderSearchResult, LenderSearchCategory, LenderSearchSource } from '../src/lender-search.ts';
 export type {OfficialDocument} from '../src/official-info.ts';
 export type ClientCommand = input<typeof commandSchema>;
@@ -34,7 +35,7 @@ export type ServerEvent =
   | Envelope<'document.parsed', DocumentParsed>
   | Envelope<'case.review', CaseReview>
   | Envelope<'case.snapshot', CaseSnapshot>
-  | Envelope<'case.confirmed', Pick<CaseSnapshot, 'case_id' | 'revision' | 'corrections'>>
+  | Envelope<'case.confirmed', Pick<CaseSnapshot, 'case_id' | 'revision' | 'corrections' | 'source_facts' | 'fee_prefills' | 'manual_fee_ids'>>
   | Envelope<'case.checked', { case_id: string; revision: number; calculation: import('../src/domain.ts').LoanResult | null; rules: import('../src/domain.ts').RuleResult[] }>
   | Envelope<'case.calculation_unavailable', ApiError & { case_id: string; missing_fields: string[] }>
   | Envelope<'report.warning', ApiError & { case_id: string }>

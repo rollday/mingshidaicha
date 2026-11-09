@@ -1,5 +1,6 @@
 import unittest
 from decimal import Decimal
+from unittest.mock import patch
 
 from python.calculation import CalculationError
 from python.loan_plan import calculate_loan
@@ -35,6 +36,73 @@ def fee_case(disbursed="20000", payment="913.69", included=()):
 
 
 class LoanPlanTests(unittest.TestCase):
+    def test_ledger_reconciles_mixed_and_contingent_fees(self):
+        case = fee_case(disbursed="19400", payment="1033.69", included=("upfront_a", "guarantee"))
+        case["fees"].append({"id": "late", "name": "Late", "contingent": True})
+        result = calculate_loan(case)
+        self.assertEqual([entry["category"] for entry in result["fee_ledger"]],
+                         ["deducted_from_disbursement", "additional_payment", "additional_payment",
+                          "included_in_repayment", "additional_payment", "contingent"])
+        reconciliation = result["reconciliation"]
+        self.assertEqual(Decimal(reconciliation["total_payment"]), Decimal("27449.56"))
+        self.assertEqual(Decimal(reconciliation["net_cashflow_total"]), Decimal("-8049.56"))
+        self.assertEqual(reconciliation["periods"][0]["additional_fees"], "529")
+        self.assertEqual(reconciliation["periods"][1]["included_fees"], "120")
+        self.assertEqual(reconciliation["periods"][1]["net_cashflow"], "-1121.69")
+
+    def test_dated_specific_fees_reconcile_by_occurrence(self):
+        case = facts(principal="1000", disbursed="950", term_periods=2, repay_method="schedule",
+                     period_payment=None, nominal_apr=None, start_date="2025-01-01")
+        case["repayments"] = [{"amount": "500", "date": "2025-02-15"},
+                              {"amount": "600", "date": "2025-05-20"}]
+        case["fees"] = [
+            {"id": "a", "name": "A", "amount": "20", "timing": "specific_period", "period": 0,
+             "included_in_cashflows": True, "contingent": False},
+            {"id": "b", "name": "B", "amount": "30", "timing": "specific_period", "period": 2,
+             "included_in_cashflows": False, "contingent": False},
+        ]
+        result = calculate_loan(case)
+        self.assertEqual(result["fee_ledger"][1]["occurrences"],
+                         [{"period": 2, "date": "2025-05-20", "amount": "30"}])
+        self.assertEqual(result["reconciliation"]["periods"][2]["net_cashflow"], "-630")
+        self.assertEqual(result["reconciliation"]["total_payment"], "1130")
+
+    def test_contradictory_included_fees_are_rejected(self):
+        case = fee_case(included=("upfront_a",))
+        with self.assertRaises(CalculationError) as caught:
+            calculate_loan(case)
+        self.assertEqual(caught.exception.code, "CALCULATION_INCONSISTENT")
+        case = fee_case(payment="100", included=("guarantee",))
+        with self.assertRaises(CalculationError) as caught:
+            calculate_loan(case)
+        self.assertEqual(caught.exception.code, "CALCULATION_INCONSISTENT")
+        case = fee_case(payment="913.69", included=("guarantee", "platform"))
+        case["loan"]["nominal_apr"] = "0.08"
+        with self.assertRaises(CalculationError) as caught:
+            calculate_loan(case)
+        self.assertEqual(caught.exception.code, "CALCULATION_INCONSISTENT")
+
+    def test_included_fee_above_standard_annuity_and_rounding_tolerance(self):
+        case = facts(period_payment="938.49")
+        case["fees"] = [{"id": "a", "name": "A", "amount": "50", "timing": "per_period",
+                         "included_in_cashflows": True, "contingent": False}]
+        result = calculate_loan(case)
+        self.assertEqual(result["reconciliation"]["periods"][1]["included_fees"], "50")
+        self.assertEqual(result["summary"]["total_additional_fees"], "0")
+
+    def test_cashflow_disagreement_is_rejected(self):
+        from python.loan_plan import calculate as real_calculate
+
+        def corrupt(payload):
+            result = real_calculate(payload)
+            result["cashflows"][1]["amount"] = "-1"
+            return result
+
+        with patch("python.loan_plan.calculate", side_effect=corrupt):
+            with self.assertRaises(CalculationError) as caught:
+                calculate_loan(fee_case())
+        self.assertEqual(caught.exception.code, "CALCULATION_INCONSISTENT")
+
     def test_separate_fees_enter_cashflows_and_rate(self):
         result = calculate_loan(fee_case())
         cashflows = result["calculation"]["cashflows"]

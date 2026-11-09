@@ -26,7 +26,7 @@ export function applyEvent(state: CaseState, event: ServerEvent): CaseState {
     case 'task.progress': return { ...state, stage: event.data.stage };
     case 'case.review': return { ...state, current: event.data, screen: 'confirm',checked:event.data.checked??null,activities:mergeActivities(state.activities,event.data.activities??[]) };
     case 'case.snapshot': return { ...state, current: event.data, screen: event.data.report ? 'report' : 'confirm',checked:event.data.checked??null,draft:null,activities:mergeActivities(state.activities,event.data.activities??[]) };
-    case 'case.confirmed': return { ...state,checked:null,draft:null,current: state.current ? { ...state.current, revision: event.data.revision, corrections: event.data.corrections, report: null,checked:null } : null };
+    case 'case.confirmed': return { ...state,checked:null,draft:null,current: state.current ? { ...state.current, ...event.data, report: null,checked:null } : null };
     case 'case.checked':return state.current?.case_id===event.data.case_id && state.current.revision===event.data.revision?{...state,checked:event.data,current:{...state.current,checked:event.data}}:state;
     case 'case.calculation_unavailable': return { ...state, warning: '材料不足或存在冲突，本次报告将注明无法核算。' };
     case 'report.warning': return { ...state, warning: event.data.message };
@@ -252,10 +252,10 @@ export class CaseClient {
       funds_to: 'borrower',
     } });
   }
-  confirm(facts: CaseFacts) {
+  confirm(facts: CaseFacts, prefillFeeIds?: string[]) {
     if (!this.state.current || this.state.busy) return;
     this.update({ checked:null,draft:null,current: { ...this.state.current, facts: structuredClone(facts), report: null,checked:null } });
-    this.task({ type: 'case.confirm', request_id: crypto.randomUUID(), case_id: this.state.current.case_id, expected_revision: this.state.current.revision, facts });
+    this.task({ type: 'case.confirm', request_id: crypto.randomUUID(), case_id: this.state.current.case_id, expected_revision: this.state.current.revision, facts, ...(prefillFeeIds?.length ? { prefill_fee_ids: prefillFeeIds } : {}) });
   }
   retryReport() { if (this.state.current && !this.state.busy) this.task({ type: 'case.report', request_id: crypto.randomUUID(), case_id: this.state.current.case_id, expected_revision: this.state.current.revision }); }
   searchLender(name:string) { if (this.state.current && !this.state.busy) { this.update({stage:'search_sources'});this.task({type:'lender.search',request_id:crypto.randomUUID(),case_id:this.state.current.case_id,expected_revision:this.state.current.revision,name}); } }

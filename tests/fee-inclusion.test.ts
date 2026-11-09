@@ -66,8 +66,9 @@ test('inclusion must match the selected payment and exact fee amounts', async ()
 });
 
 test('negations, conditions and conflicting evidence do not support true', async () => {
+  // Explicit exclusion of the named amounts now supplies a safe false prefill.
+  assert.deepEqual(statuses(await extract(fixture('每期还款总额1121.69元，不包含管理费120元、保障费88元。'))), [false, false]);
   for (const quote of [
-    '每期还款总额1121.69元，不包含管理费120元、保障费88元。',
     '每期还款总额1121.69元，未计入管理费120元、保障费88元。',
     '如果每期还款总额1121.69元，含管理费120元、保障费88元。',
   ]) assert.deepEqual(statuses(await extract(fixture(quote))), [null, null]);
@@ -127,7 +128,7 @@ test('existing source quote and amount validation precede the inclusion guard', 
   assert.deepEqual(statuses(result), [null, null]);
 });
 
-test('unsupported schedules and timing remain unknown; false and null are retained', async () => {
+test('unsupported schedules stay unknown; strong source evidence prefills model guesses', async () => {
   const schedule = fixture();
   schedule.facts.repayments = [{ period: 1, amount: '1121.69' }];
   assert.deepEqual(statuses(await extract(schedule)), [null, null]);
@@ -137,7 +138,11 @@ test('unsupported schedules and timing remain unknown; false and null are retain
   const unchanged = fixture();
   unchanged.facts.fees[0]!.included_in_cashflows = false;
   unchanged.facts.fees[1]!.included_in_cashflows = null;
-  assert.deepEqual(statuses(await extract(unchanged)), [false, null]);
+  assert.deepEqual(statuses(await extract(unchanged)), [true, true]);
+  const weak = fixture('管理费120元、保障费88元与每期本息一并扣划。');
+  weak.facts.fees[0]!.included_in_cashflows = false;
+  weak.facts.fees[1]!.included_in_cashflows = null;
+  assert.deepEqual(statuses(await extract(weak)), [null, null]);
 });
 
 function upfront(quote = '本金20000元，扣除服务费600元、咨询费499元、资料费30元后，实际到账18871元。') {
@@ -196,6 +201,9 @@ test('ambiguous extraction blocks Python until user confirms additional recurrin
   output.facts.loan.disbursed = '20000';
   output.evidence.find(item => item.field === 'loan.disbursed')!.quote = '实际到账20000元';
   output.facts.fees.forEach(fee => { fee.included_in_cashflows = false; });
+  output.evidence.filter(item => /fees\[[0-2]\]\.included_in_cashflows/.test(item.field)).forEach(item => {
+    item.quote = '实际到账20000元，另行支付服务费600元、咨询费499元、资料费30元。';
+  });
   output.facts.fees.push(...fixture().facts.fees);
   for (const [index, fee] of output.facts.fees.entries()) {
     if (index < 3) continue;

@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { decimal } from './numeric.ts';
+import type { FeePrefill } from '../shared/fee-prefill.ts';
 
 const short = z.string().max(300);
 const nullableMoney = decimal.nullable().default(null);
@@ -50,7 +51,9 @@ export const caseExtractionSchema = z.object({
   questions: z.array(z.object({ field: short, question: z.string().max(1000) }).strict()).max(100),
   conflicts: z.array(z.object({ field: short, description: z.string().max(1000), evidence_ids: z.array(short).max(20) }).strict()).max(100),
 }).strict();
-export type CaseExtraction = z.infer<typeof caseExtractionSchema>;
+// Prefill provenance is created by deterministic code after source validation,
+// never accepted as model-authored evidence.
+export type CaseExtraction = z.infer<typeof caseExtractionSchema> & { fee_prefills?: FeePrefill[] };
 export type SourceMaterial = { id: string; role: 'disclosure' | 'contract' | 'schedule' | 'other'; pages: { page: number; text: string }[]; vision?: boolean };
 export type RuleResult = ReturnType<typeof import('../shared/rule-policy.ts').gradeRule> & {
   rule_id: string; title: string; status: 'triggered' | 'not_triggered' | 'insufficient_data' | 'not_applicable';
@@ -62,4 +65,9 @@ export type LoanResult = {
   input: unknown; calculation: { cashflows: unknown[]; nominal_apr: string | null; effective_apr: string | null; simple_apr: string | null; xirr_apr: string | null; comparison: { method: string; method_basis?: 'explicit' | 'assumed_simple' | 'unavailable'; disclosed_method?: string; method_label?: string; quoted_apr: string | null; computed_apr: string | null; gap_pp: string | null; exceeds_tolerance: boolean | null } };
   summary: { principal: string; disbursed: string; total_repayment: string; total_additional_fees: string; total_payment: string; total_cost: string };
   fee_totals: { id: string; name: string; total: string; contingent: boolean }[];
+  fee_ledger?: { fee_index: number; id: string; name: string;
+    category: 'deducted_from_disbursement' | 'included_in_repayment' | 'additional_payment' | 'contingent';
+    total: string; occurrences: { period: number; amount: string; date?: string }[] }[];
+  reconciliation?: { periods: { period: number; date?: string; repayment: string; included_fees: string; additional_fees: string; net_cashflow: string }[];
+    total_repayment: string; total_additional_fees: string; total_payment: string; net_cashflow_total: string };
 };
