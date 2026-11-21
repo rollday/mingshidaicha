@@ -62,7 +62,7 @@ export function groundDisclosedRate(extraction: CaseExtraction, materials: Sourc
       }
       if (potentialNormalFees || !tableTitle.test(page.text)) continue;
       const none = /^(?:其他息费|其他费用)\s*\n\s*无\s*$/m.test(page.text);
-      const singleMaturity = /到期一次性偿还本金[^。]{0,130}及利息[^。]{0,85}合计/.test(page.text) &&
+      const singleMaturity = /到期日?一次性偿还本金[^。]{0,130}及利息[^。]{0,85}合计/.test(page.text) &&
         !/^(?:其他息费|其他费用|[^\n]*服务费|[^\n]*担保费|[^\n]*扣费)\s*$/m.test(page.text);
       if (!none && !singleMaturity) continue;
       const row = page.text.match(/^贷款利息[^\S\n]*\n[^\n]+/m)?.[0];
