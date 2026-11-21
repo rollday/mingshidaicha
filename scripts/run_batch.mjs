@@ -160,7 +160,8 @@ export async function runBatch(manifest, { output, credentials, timeout = 180000
     await writeFile(logPath, '', { mode: 0o600, flag: 'wx' });
     const started = Date.now();
     let token, channel;
-    const result = { id: sample.id, status: 'failed', cleanup: 'not_needed', started_at: new Date(started).toISOString() };
+    const result = { id: sample.id, status: 'failed', cleanup: 'not_needed', started_at: new Date(started).toISOString(),
+      model_retries: [] };
     try {
       const session = await (await http('/api/sessions', { method: 'POST' })).json();
       requireValue(typeof session.session_token === 'string' && session.session_token, 'INVALID_SESSION_RESPONSE');
@@ -173,7 +174,10 @@ export async function runBatch(manifest, { output, credentials, timeout = 180000
         documents.push({ document_id: uploaded.document_id, role: document.role });
       }
       const url = new URL('/ws', manifest.base_url); url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
-      channel = connect(url, authorization, timeout, event => appendFileSync(logPath, JSON.stringify(redact(event)) + '\n'));
+      channel = connect(url, authorization, timeout, event => {
+        appendFileSync(logPath, JSON.stringify(redact(event)) + '\n');
+        if (event.type === 'model.retry') result.model_retries.push(redact(event.data));
+      });
       await channel.opened;
       await channel.request({ type: 'session.authenticate', token }, 'session.ready');
       const extraction = await channel.request({ type: 'case.start', documents, ...(sample.text ? { text: sample.text } : {}),

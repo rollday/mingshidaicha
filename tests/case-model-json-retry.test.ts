@@ -122,3 +122,20 @@ test('extract can still complete one successful structure repair', async () => {
   assert.deepEqual(result.evidence, []);
   assert.equal(fixture.callCount(), 2);
 });
+
+test('an unmatched quotation may be repaired once and still needs to match the source', async () => {
+  const response = (quote: string) => JSON.stringify({
+    facts: {}, questions: [], conflicts: [],
+    evidence: [{id: 'e', field: 'fees[0].included_in_disclosed_cost', document_id: 'doc', page: 1, quote}],
+  });
+  const context = [{ id: 'doc', role: 'contract' as const, pages: [{ page: 1, text: '担保费列在综合成本说明中。' }] }];
+  const fixture = modelWith(call => responseStream(response(call === 1 ? '担保费没有列出。' : '担保费列在综合成本说明中。')));
+  const retries: string[] = [];
+  const result = await fixture.model.extract(context, undefined, new AbortController().signal, () => {}, code => retries.push(code));
+  assert.equal(result.evidence[0]?.quote, '担保费列在综合成本说明中。');
+  assert.deepEqual(retries, ['UNSUPPORTED_EVIDENCE']);
+  assert.equal(fixture.callCount(), 2);
+  const stillWrong = modelWith(() => responseStream(response('担保费没有列出。')));
+  await assert.rejects(stillWrong.model.extract(context, undefined, new AbortController().signal, () => {}), { code: 'UNSUPPORTED_EVIDENCE' });
+  assert.equal(stillWrong.callCount(), 2);
+});

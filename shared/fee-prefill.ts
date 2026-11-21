@@ -74,6 +74,38 @@ function boundFee(facts: CaseFacts, fee: CaseFacts['fees'][number], quote: strin
   }
 }
 
+function excludedFromBase(name: string, amount: string): RegExp {
+  return new RegExp(
+    '(?:除(?:每期)?(?:应还)?贷款本息外[^。;；]{0,65}(?:另行|另外|额外|另)(?:收取|扣收|支付|收|付|计费)' +
+    escape(name) + amount + '元|' + escape(name) + '不(?:包含|计入)在每期应还贷款本息之内)', 'g');
+}
+
+export function resolveFeeBreakdownConflicts(output: CaseExtraction): void {
+  const { facts, evidence } = output;
+  if (!validNumbers(facts)) return;
+  output.conflicts = output.conflicts.filter(conflict => {
+    const match = path(conflict.field).match(/^fees\[(\d+)\]\.included_in_cashflows$/);
+    const fee = match ? facts.fees[Number(match[1])] : undefined;
+    if (!fee || fee.timing !== 'per_period' || fee.amount === null) return true;
+    const name = feeName(fee.name);
+    const linked = conflict.evidence_ids.map(id => evidence.find(item => item.id === id));
+    if (linked.length < 2 || linked.some(item => !item)) return true;
+    const quotes = linked.map(item => clean(item!.quote));
+    const proof = quotes.map(quote => boundFee(facts, fee, quote)).find(item => item?.base && item.total && !eq(item.base, item.total));
+    if (!proof || !quotes.some(quote => excludedFromBase(name, num).test(quote))) return true;
+    return quotes.some(quote => {
+      const ownProof = boundFee(facts, fee, quote);
+      if (ownProof?.base && ownProof.total) return !eq(ownProof.base, proof.base!) || !eq(ownProof.total, proof.total!);
+      if (unsafe.test(quote)) return true;
+      const baseStatement = [...quote.matchAll(excludedFromBase(name, num))].find(item => !item[1] || eq(item[1]!, fee.amount!));
+      if (baseStatement) return /不(?:包含|计入)|另(?:收|付|支付)/.test(quote.replace(baseStatement[0], ''));
+      // A table's named, per-period fee row may repeat that the fee is included.
+      const repeated = quote.match(new RegExp('^每期费用\\(' + escape(name) + '\\)' + num + '元/期[^。]{0,125}已计入每期还款现金流'));
+      return !repeated || !eq(repeated[1]!, fee.amount!);
+    });
+  });
+}
+
 /** Keep the exact clauses when the model quotes only part of a fee breakdown. */
 export function addFeeBreakdownEvidence(output: CaseExtraction, materials: SourceMaterial[]): void {
   if (!validNumbers(output.facts)) return;
@@ -202,9 +234,7 @@ export function inferFeePrefills(facts: CaseFacts, evidence: Evidence[], conflic
       // establishes a false suggestion relative to that total.
       const looseFee = escape(name) + '(?:(?:为|[:：])?' + num + '元)?';
       const collection = '(?:另行|另外|额外|单独|另)(?:收取|扣收|支付|收|付|计费)';
-      const baseExclusion = new RegExp(
-        '(?:除(?:每期)?(?:应还)?贷款本息外[^。;；]{0,65}' + collection + feeToken +
-        '|' + escape(name) + '不(?:包含|计入)在每期应还贷款本息之内)', 'g');
+      const baseExclusion = excludedFromBase(name, '(?:为|[:：])?' + num);
       const otherStatements = boundTotals.length ? quote.replace(baseExclusion, '') : quote;
       const separateFromBase = otherStatements !== quote;
       if (new RegExp(looseFee + '(?:[,，])?(?:需|须|应)?' + collection).test(otherStatements) ||

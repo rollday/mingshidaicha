@@ -255,6 +255,7 @@ def grade(gold, attempts):
                 history.append({"sample_id": sid, "round": round_no, "attempt": number, "started_at": result.get("started_at"),
                                 "finished_at": result.get("finished_at"), "elapsed_ms": result.get("elapsed_ms"),
                                 "status": result.get("status"), "kind": cause, "error": code, "cleanup": result.get("cleanup"),
+                                "model_retries": json.dumps(result.get("model_retries") or [], ensure_ascii=False),
                                 "reference_outcome": outcome, "issues": " | ".join(errors),
                                 "sample_sha256": sample_hash, "pdf_sha256": result.get("pdf_sha256")})
                 details.extend({"sample_id": sid, "round": round_no, "attempt": number, **line} for line in lines)
@@ -310,7 +311,7 @@ def main():
     write_csv(args.output / "score_22.csv", list(samples[0]), samples)
     write_csv(args.output / "rounds_66.csv", list(rounds[0]), rounds)
     write_csv(args.output / "cashflow_details.csv", ["sample_id", "round", "attempt", "time", "gold", "model", "diff_yuan", "pass"], details)
-    write_csv(args.output / "attempts.csv", ["sample_id", "round", "attempt", "started_at", "finished_at", "elapsed_ms", "status", "kind", "error",
+    write_csv(args.output / "attempts.csv", ["sample_id", "round", "attempt", "started_at", "finished_at", "elapsed_ms", "status", "kind", "error", "model_retries",
                                             "cleanup", "reference_outcome", "issues", "sample_sha256", "pdf_sha256"], attempts)
     verdicts = {row["sample_id"]: row["verdict"] for row in samples}
     overall = "FAIL" if "FAIL" in verdicts.values() else "UNSCORABLE" if "UNSCORABLE" in verdicts.values() else "PASS"

@@ -145,7 +145,10 @@ export class CaseWorkflow {
       checkpoint();
       emit('task.progress', { stage: command.manual_facts ? 'prepare_review' : 'extract_case' });
       const extraction: CaseExtraction = command.manual_facts ? { facts: command.manual_facts, evidence: [], questions: [], conflicts: [] }
-        : await this.model.extract(materials, command.context, signal, progress('extract_case'));
+          : await this.model.extract(materials, command.context, signal, progress('extract_case'), code => {
+            emit('model.retry', { stage: 'extract_case', code, attempt: 2 });
+            log('extract_case', 'warning', '上一轮抽取未通过校验，正在重新核对原文。');
+          });
       if (typeof command.context?.is_student === 'boolean') extraction.facts.borrower.is_student = command.context.is_student;
       if (command.context?.purpose && command.context.purpose !== 'unknown') extraction.facts.borrower.purpose = command.context.purpose;
       extraction.facts = normalizeCaseFacts(extraction.facts);

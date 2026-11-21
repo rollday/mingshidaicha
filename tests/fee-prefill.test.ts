@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { caseFactsSchema, type CaseFacts, type Evidence } from '../src/domain.ts';
-import { addFeeBreakdownEvidence, inferFeePrefills } from '../shared/fee-prefill.ts';
+import { addFeeBreakdownEvidence, inferFeePrefills, resolveFeeBreakdownConflicts } from '../shared/fee-prefill.ts';
 
 const make = (): CaseFacts => caseFactsSchema.parse({
   loan: { principal: '20000', disbursed: '18871', period_payment: '913.69', term_periods: 24,
@@ -54,6 +54,26 @@ test('the same named fee can be deducted upfront and charged monthly when each o
     facts.loan.period_payment = '4500';
     assert.deepEqual(inferFeePrefills(facts, extraction.evidence, []), []);
   }
+});
+
+test('base-only and all-in amounts are reconciled only when every conflict quotation agrees with the exact breakdown', () => {
+  const facts = caseFactsSchema.parse({loan: {period_payment: '4330.95', repay_method: 'equal_installment'},
+    fees: [{id: 'fee', name: '平台服务费（每期）', timing: 'per_period', contingent: false, amount: '150'}]});
+  const field = 'fees[0].included_in_cashflows';
+  const evidenceRows = [
+    evidence(field, '除贷款本息外，甲方每期另支付平台服务费150元。', 'base'),
+    evidence(field, '每期还款额4480.95元（其中贷款本息4330.95元 + 每期平台服务费150元）', 'total'),
+    evidence(field, '每期费用（平台服务费）150元/期，已计入每期还款现金流。', 'repeat'),
+  ];
+  const conflict = {field, description: '本息与总额范围不同', evidence_ids: ['base','total','repeat']};
+  const compatible = {facts, evidence: evidenceRows, questions: [], conflicts: [conflict]};
+  resolveFeeBreakdownConflicts(compatible);
+  assert.equal(compatible.conflicts.length, 0);
+  assert.equal(inferFeePrefills(facts, evidenceRows, compatible.conflicts)[0]?.value, false);
+  const inconsistent = {...compatible, conflicts: [conflict],
+    evidence: evidenceRows.map(row => row.id === 'repeat' ? {...row, quote: row.quote.replace('150','175')} : row)};
+  resolveFeeBreakdownConflicts(inconsistent);
+  assert.equal(inconsistent.conflicts.length, 1);
 });
 
 test('independently evidenced A1 allows co-collection only for verified standard annuity', () => {

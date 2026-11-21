@@ -31,6 +31,7 @@ export interface BatchResult {
   started_at: string;
   finished_at: string;
   pdf_sha256?: string;
+  model_retries?: { stage: string; code: string; attempt: number }[];
   error?: string;
   generation_mode?: string | null;
   calculation_available?: boolean;

@@ -30,6 +30,7 @@ export type ServerEvent =
   | Envelope<'task.progress', { stage: string; document_id?: string }>
   | Envelope<'model.progress', { received_bytes: number; stage?: string }>
   | Envelope<'task.activity',Activity>
+  | Envelope<'model.retry', { stage: 'extract_case'; code: string; attempt: number }>
   | Envelope<'report.draft',ReportDraft>
   | Envelope<'lender.category',{category:import('../src/lender-search.ts').LenderSearchCategory}>
   | Envelope<'document.parsed', DocumentParsed>
