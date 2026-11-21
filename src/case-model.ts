@@ -5,6 +5,7 @@ import type { Config } from './config.ts';
 import { AppError } from './errors.ts';
 import { caseExtractionSchema, caseFactsSchema, type SourceMaterial, type CaseExtraction } from './domain.ts';
 import { guardFeeInclusion } from './fee-inclusion.ts';
+import { groundDisclosedRate } from './disclosed-rate.ts';
 import { inferFeePrefills } from '../shared/fee-prefill.ts';
 
 export function locateQuote(source: string, quote: string): string | null {
@@ -125,6 +126,7 @@ funds_to为borrower/training_provider/third_party/unknown；marketing_phrases仅
     };
     for (const key of ['principal', 'disbursed', 'period_payment'] as const) check(`loan.${key}`, output.facts.loan[key], () => { output.facts.loan[key] = null; });
     for (const [i, fee] of output.facts.fees.entries()) check(`fees[${i}].amount`, fee.amount, () => { fee.amount = null; });
+    groundDisclosedRate(output, materials);
     guardFeeInclusion(output);
     // These suggestions are grounded in already verified source quotations.
     // They may resolve a model's unknown value, but never edit a user's facts.

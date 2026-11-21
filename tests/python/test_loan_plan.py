@@ -220,6 +220,16 @@ class LoanPlanTests(unittest.TestCase):
                                       nominal_apr="0.12"))
         self.assertEqual([row["amount"] for row in result["input"]["repayments"]], ["51", "50.5"])
 
+    def test_generated_equal_installment_rounds_once_and_preserves_explicit_tail(self):
+        case = facts(principal="40000", disbursed="40000", term_periods=24,
+                     period_payment=None, nominal_apr="0.20")
+        result = calculate_loan(case)
+        self.assertEqual([row["amount"] for row in result["input"]["repayments"]], ["2035.83"] * 24)
+        self.assertEqual(result["summary"]["total_payment"], "48859.92")
+        case["repayments"] = [{"period": n, "amount": "2035.83" if n < 24 else "2035.90"} for n in range(1, 25)]
+        explicit = calculate_loan(case)
+        self.assertEqual(Decimal(explicit["input"]["repayments"][-1]["amount"]), Decimal("2035.90"))
+
     def test_missing_fields_and_unknown_fee_classification_are_explicit(self):
         case = facts(disbursed=None)
         with self.assertRaises(CalculationError) as caught:

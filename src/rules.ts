@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import type { CaseFacts, Evidence, LoanResult, RuleResult } from './domain.ts';
 import {defaultRuleLevel,gradeRule,type RuleNature} from '../shared/rule-policy.ts';
+import { comparisonStatus, unavailableComparisonLabels } from '../shared/apr-comparison.ts';
 
 type Citation = NonNullable<RuleResult['citation']>;
 type RuleDefinition = {
@@ -120,18 +121,20 @@ export function evaluateRules(
   '核对明示表是否列明本金、各息费项目、收取方式、标准、主体及年化综合成本。');
 
   const comparison = resultValue?.calculation.comparison;
-  const assumed = comparison?.method_basis === 'assumed_simple';
-  push('R02', assumed ? 'insufficient_data' : comparison?.exceeds_tolerance === true ? 'triggered' : comparison?.exceeds_tolerance === false ? 'not_triggered' : 'insufficient_data',
+  const status = comparisonStatus(comparison);
+  const assumed = status === 'provisional';
+  const exceeds = status === 'complete' ? comparison?.exceeds_tolerance : null;
+  push('R02', exceeds === true ? 'triggered' : exceeds === false ? 'not_triggered' : 'insufficient_data',
     assumed && comparison?.exceeds_tolerance === true
       ? '按单利推定的重算差额超过项目容差；原披露口径未确认，须核实后才能判断是否真正存在差异。'
       : assumed && comparison?.exceeds_tolerance === false
         ? '按单利推定的重算差额未超过项目容差；原披露口径仍需确认。'
-        : assumed ? '已按单利推定重算，但缺少可比较的标注值或披露口径尚未确认。'
-      : comparison?.exceeds_tolerance === true
+      : exceeds === true
     ? '同口径自算值与标注值的差异超过本项目设置的容差；该阈值不是违法认定标准。'
-      : comparison?.exceeds_tolerance === false
+      : exceeds === false
         ? '同口径重算值与披露值的差异未超过本项目设置的容差。'
-        : '缺少可比较的计算结果或明确的披露口径，暂不能判断差异。',
+        : comparison?.unavailable_reason ? unavailableComparisonLabels[comparison.unavailable_reason] + '，暂不能判断差异。'
+          : '缺少完整的同口径比较结果，暂不能判断差异。',
     '核实实际到账和还款安排，并明确明示表采用的年化口径。');
 
   const normalFees = facts.fees.filter((fee) => fee.contingent === false);

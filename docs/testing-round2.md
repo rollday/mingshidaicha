@@ -45,7 +45,7 @@
 
 直连后端时也支持 `Authorization: Bearer <session_token>`。公网网关需要 Basic，这时应用令牌应放在 `X-Session-Token`，避免争用同一个 `Authorization` 头。WS 的应用令牌放在认证消息中，不放 URL。
 
-报告 PDF 导出另用 `POST /api/reports/pdf`，JSON 为 `{case_id, expected_revision}`，鉴权与上传相同。本批跑脚本不执行 PDF 导出、机构检索或浏览器界面验收；这些环节需要对应测试用例。
+报告 PDF 导出另用 `POST /api/reports/pdf`，JSON 为 `{case_id, expected_revision}`，鉴权与上传相同。完整链路清单可加 `"export_pdf": true` 保存用户可下载的报告及其 SHA-256。机构检索和浏览器界面需要单独的测试用例。
 
 ## run_batch.mjs 使用说明
 

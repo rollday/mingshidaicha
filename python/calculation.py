@@ -159,6 +159,24 @@ def _build_cashflows(payload: dict[str, Any], timing: str, periods_per_year: int
     return cashflows
 
 
+def _periodic_simple(cashflows: list[tuple[int | date, Decimal]], periods_per_year: int) -> Decimal | None:
+    first_period, receipt = cashflows[0]
+    last_period, final_payment = cashflows[-1]
+    if len(cashflows) > 2:
+        first_due, interest_payment = cashflows[1]
+        interval = int(first_due) - int(first_period)
+        # Fixed interest installments with principal repaid in full at maturity.
+        if final_payment != interest_payment - receipt or any(
+            int(period) != int(first_period) + index * interval or
+            (index < len(cashflows) - 1 and amount != interest_payment)
+            for index, (period, amount) in enumerate(cashflows[1:], 1)
+        ):
+            return None
+    years = Decimal(int(last_period) - int(first_period)) / Decimal(periods_per_year)
+    cost = -sum((amount for _, amount in cashflows), ZERO)
+    return cost / receipt / years
+
+
 def _calculate(payload: Any) -> dict[str, Any]:
     if not isinstance(payload, dict):
         raise CalculationError("INVALID_INPUT", "payload must be an object")
@@ -182,11 +200,7 @@ def _calculate(payload: Any) -> dict[str, Any]:
         with localcontext() as ctx:
             ctx.prec = 60
             effective = (ONE + rate) ** periods_per_year - ONE
-        simple = None
-        if len(cashflows) == 2:
-            period_span = int(cashflows[1][0]) - int(cashflows[0][0])
-            years = Decimal(period_span) / Decimal(periods_per_year)
-            simple = ((-cashflows[1][1] - cashflows[0][1]) / cashflows[0][1]) / years
+        simple = _periodic_simple(cashflows, periods_per_year)
         result.update(period_rate=_fmt(rate), nominal_apr=_fmt(nominal), effective_apr=_fmt(effective),
                       simple_apr=_fmt(simple) if simple is not None else None, xirr_apr=None)
     else:
@@ -207,16 +221,27 @@ def _calculate(payload: Any) -> dict[str, Any]:
     }
     method = "simple" if disclosed_method == "unknown" else disclosed_method
     if disclosed_method == "unknown":
-        method_basis = "assumed_simple" if candidates["simple"] is not None else "unavailable"
+        # The existing fallback only applies to a single maturity payment.
+        method_basis = "assumed_simple" if len(cashflows) == 2 and candidates["simple"] is not None else "unavailable"
     else:
         method_basis = "explicit"
     computed = candidates.get(method) if method_basis != "unavailable" else None
     computed_decimal = Decimal(computed) if computed is not None else None
     gap = (computed_decimal - quoted) * 100 if computed_decimal is not None and quoted is not None else None
+    if quoted is None:
+        reason = "missing_disclosed_apr"
+    elif method_basis == "unavailable":
+        reason = "unconfirmed_disclosed_method"
+    elif computed is None:
+        reason = "unsupported_cashflow_for_method"
+    else:
+        reason = None
     comparison = {
         "method": method,
         "method_basis": method_basis,
         "disclosed_method": disclosed_method,
+        "status": "unavailable" if reason else "provisional" if method_basis == "assumed_simple" else "complete",
+        "unavailable_reason": reason,
         "quoted_apr": quoted_raw,
         "computed_apr": computed,
         "gap_pp": _fmt(gap) if gap is not None else None,

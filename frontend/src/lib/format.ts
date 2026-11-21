@@ -14,7 +14,7 @@ export function decimal(value: string | null | undefined, places = 2, shift = 0)
 export const money = (value: string | null | undefined) => value == null ? '—' : decimal(value) + ' 元';
 export const percent = (value: string | null | undefined) => value == null ? '—' : decimal(value, 2, 2) + '%';
 export const triState = (value: boolean | null | undefined) => value === true ? '是' : value === false ? '否' : '待确认';
-export const methodNames: Record<string, string> = { nominal: '名义年化', effective: '复利年化', simple: '到期单利年化', xirr: '按实际日期年化', unknown: '口径待确认' };
+export const methodNames: Record<string, string> = { nominal: '名义年化', effective: '复利年化', simple: '单利年化', xirr: '按实际日期年化', unknown: '口径待确认' };
 export function shiftDecimal(value: string, shift: number): string {
   const [whole = '0', fraction = ''] = value.split('.');
   const places = fraction.length - shift;

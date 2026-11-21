@@ -41,7 +41,7 @@ _BLUE = colors.HexColor("#285F91")
 _METHODS = {
     "nominal": "名义年化",
     "effective": "复利年化",
-    "simple": "到期单利年化",
+    "simple": "单利年化",
     "xirr": "按实际日期年化",
     "unknown": "口径待确认",
 }
@@ -310,6 +310,10 @@ def _append_key_metrics(story: list[Any], report: dict[str, Any], styles: dict[s
     method = _plain(comparison.get("method_label"), fallback=_method(comparison.get("method")), maximum=100)
     if comparison.get("method_basis") == "assumed_simple":
         method += "（按单利推定，披露口径待确认）"
+    complete = (comparison.get("status") != "unavailable" and
+                comparison.get("method_basis") != "unavailable" and
+                all(_number(comparison.get(key)) is not None for key in ("quoted_apr", "computed_apr", "gap_pp")) and
+                isinstance(comparison.get("exceeds_tolerance"), bool))
     gap = _points(comparison.get("gap_pp"))
     if comparison.get("exceeds_tolerance") is True:
         gap += "，超过比较容差"
@@ -321,9 +325,25 @@ def _append_key_metrics(story: list[Any], report: dict[str, Any], styles: dict[s
         tolerance = raw_input.get("comparison_tolerance_pp")
     if tolerance is not None:
         gap += f"（工具门槛 {_points(tolerance)}）"
+    if complete:
+        recomputed = comparison.get("computed_apr")
+    else:
+        recomputed = results.get("nominal_apr")
+        method = "名义年化"
+        if recomputed is None:
+            recomputed, method = results.get("xirr_apr"), "按实际日期年化"
+        reasons = {
+            "missing_disclosed_apr": "材料未提供可比较的综合融资成本年化",
+            "unconfirmed_disclosed_method": "披露年化的计算口径待确认",
+            "unsupported_cashflow_for_method": "当前现金流未能按披露口径重算",
+        }
+        reason = comparison.get("unavailable_reason") or (
+            "missing_disclosed_apr" if comparison.get("quoted_apr") is None else "unconfirmed_disclosed_method"
+        )
+        gap = "未完成同口径比较。" + reasons.get(reason, "缺少完整比较结果")
     rows = [
         ["明示年化", f"{_percent(comparison.get('quoted_apr'))}（{_method(comparison.get('disclosed_method'))}）"],
-        ["按材料重算", f"{_percent(comparison.get('computed_apr'))}（{method}）"],
+        ["按材料重算", f"{_percent(recomputed)}（{method}）" if recomputed is not None else "暂不可用"],
         ["比较差额", gap],
         ["预计实际支付", f"{_money(summary.get('total_payment'))}（还款计划 {_money(summary.get('total_repayment'))} + 另付费用 {_money(summary.get('total_additional_fees'))}）"],
         ["借款成本（不含还本）", _money(summary.get("total_cost"))],
@@ -340,7 +360,7 @@ def _append_other_rates(story: list[Any], report: dict[str, Any], styles: dict[s
     results = calculation.get("calculation") if isinstance(calculation.get("calculation"), dict) else {}
     comparison = results.get("comparison") if isinstance(results.get("comparison"), dict) else {}
     rate_keys = [("nominal", "nominal_apr", "名义年化"), ("effective", "effective_apr", "复利年化"),
-                 ("simple", "simple_apr", "到期单利年化"), ("xirr", "xirr_apr", "按实际日期年化")]
+                 ("simple", "simple_apr", "单利年化"), ("xirr", "xirr_apr", "按实际日期年化")]
     rates = []
     for method, key, label in rate_keys:
         # The selected comparison is already shown at the start of the report.

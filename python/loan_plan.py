@@ -90,26 +90,17 @@ def _gen_standard(method: str, principal: Decimal, term: int, periods_per_year: 
     balance = principal
     payments: list[Decimal] = []
     if method == "equal_installment":
-        generated = fixed_payment is None
         if fixed_payment is None:
             if periodic_rate == 0:
                 fixed_payment = _money(principal / term)
+                # With no interest and no stated installments, split the principal exactly.
+                return [fixed_payment] * (term - 1) + [_money(principal - fixed_payment * (term - 1))]
             else:
                 factor = (_ONE + periodic_rate) ** term
                 fixed_payment = _money(principal * periodic_rate * factor / (factor - _ONE))
-        for period in range(1, term + 1):
-            interest = _money(balance * periodic_rate)
-            payment = fixed_payment
-            if period == term and generated:
-                payment = _money(balance + interest)
-            principal_paid = payment - interest
-            balance -= principal_paid
-            payments.append(payment)
-        # Fixed contractual installments remain untouched; generated installments absorb cents of tail drift.
-        if generated and payments:
-            # Recompute the last installment against the remaining balance to absorb prior cent rounding.
-            payments[-1] = _money(payments[-1] + balance)
-        return payments
+        # An equal-payment estimate rounds the payment once. A contractual
+        # final installment that differs belongs in the explicit schedule.
+        return [fixed_payment] * term
 
     if method == "equal_principal":
         base_principal = _money(principal / term)

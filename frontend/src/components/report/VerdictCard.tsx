@@ -1,4 +1,5 @@
 import type { AuditReport } from '../../types/audit.ts';
+import { comparisonStatus, unavailableComparisonLabels } from '../../../../shared/apr-comparison.ts';
 import { decimal, methodNames, money, percent } from '../../lib/format.ts';
 import { Card, Tag, type Tone } from '../base/index.tsx';
 
@@ -9,15 +10,22 @@ const levelTone: Record<AuditReport['conclusion']['level'], Tone> = {
 };
 
 export function VerdictCard({ report }: { report: AuditReport }) {
-  const comparison = report.calculation?.calculation.comparison;
-  const method = comparison?.method;
-  const methodLabel = comparison?.method_basis === 'assumed_simple' ? '按单利推定' : comparison?.method_basis === 'unavailable' ? '口径待确认' : method ? methodNames[method] ?? method : '口径待确认';
+  const rates = report.calculation?.calculation;
+  const comparison = rates?.comparison;
+  const status = comparisonStatus(comparison);
+  const canCompare = comparison !== undefined && status !== 'unavailable';
+  const methodLabel = methodNames[comparison?.method ?? 'unknown'];
+  const recomputed = canCompare ? comparison.computed_apr : rates?.nominal_apr ?? rates?.xirr_apr;
+  const recomputedLabel = canCompare ? methodLabel : rates?.nominal_apr != null ? '名义年化' : '按实际日期年化';
+  const reason = comparison?.unavailable_reason ??
+    (comparison?.quoted_apr == null ? 'missing_disclosed_apr' : comparison.method_basis === 'unavailable' ? 'unconfirmed_disclosed_method' : null);
   const { confirmed_issues, pending_checks, advisory_hints } = report.conclusion.counts;
   const conclusionTone = levelTone[report.conclusion.level];
   const tone = confirmed_issues === 0 && pending_checks > 0 ? 'amber' : conclusionTone;
-  const canCompare = comparison?.quoted_apr != null && comparison.computed_apr != null && comparison.method_basis !== 'unavailable';
   const heading = canCompare
     ? `明示年化 ${percent(comparison.quoted_apr)}，按材料重算约 ${percent(comparison.computed_apr)}`
+    : recomputed != null
+    ? `按材料重算约 ${percent(recomputed)}（${recomputedLabel}）`
     : confirmed_issues > 0
     ? '本次核查有已确认命中'
     : pending_checks > 0
@@ -30,7 +38,6 @@ export function VerdictCard({ report }: { report: AuditReport }) {
   const feeStatusPending = report.facts.fees.filter((fee) =>
     fee.in_disclosure === null || fee.included_in_cashflows === null,
   ).length;
-  const showGap = comparison?.gap_pp != null && comparison.method_basis !== 'unavailable';
 
   return (
     <Card padding="none" className="relative overflow-hidden p-4 sm:p-7">
@@ -44,7 +51,13 @@ export function VerdictCard({ report }: { report: AuditReport }) {
           {report.conclusion.information_incomplete && pending_checks === 0 ? <Tag tone="blue">信息待补充</Tag> : null}
         </div>
         <h2 className="font-serif text-lg font-medium leading-snug">{heading}</h2>
-        {canCompare ? <p className="text-2xs text-mute">{comparison.method_basis === 'assumed_simple' ? '按单利推定，披露口径待确认' : methodLabel}；重算结果依据已确认材料。</p> : null}
+        {canCompare ? (
+          <p className="text-2xs text-mute">
+            {status === 'provisional' ? '按单利推定，披露口径待确认' : methodLabel}。差额 {decimal(comparison.gap_pp)} 个百分点，{comparison.exceeds_tolerance ? '超过' : '未超过'}比较容差。
+          </p>
+        ) : rates ? (
+          <p className="text-2xs text-mute">未完成同口径比较。{reason ? unavailableComparisonLabels[reason] : '缺少完整比较结果'}。</p>
+        ) : null}
         {!report.calculation ? <p className="text-sm text-mute">借款成本与重算年化暂不可用。</p> : null}
         {confirmedSeparateUndisclosedFees.length ? (
           <p className="text-sm text-ink-soft">未列明且另付：{confirmedSeparateUndisclosedFees.slice(0, 2).map((fee) => {
@@ -59,8 +72,8 @@ export function VerdictCard({ report }: { report: AuditReport }) {
         </div>
         <details className="text-2xs text-mute">
           <summary className="cursor-pointer font-medium text-blue">查看比较口径与金额说明</summary>
-          <p className="mt-2">明示年化：{report.facts.disclosure.quoted_apr === null ? '未提供' : percent(report.facts.disclosure.quoted_apr)}（{methodNames[report.facts.disclosure.quoted_method] ?? '口径待确认'}）；按材料重算：{comparison?.computed_apr == null ? '暂不可用' : percent(comparison.computed_apr)}（{methodLabel}）。</p>
-          {showGap ? <p className="mt-2">比较差额：{decimal(comparison.gap_pp)} 个百分点；比较容差是本工具设置的提示门槛，不是违法认定标准。</p> : null}
+          <p className="mt-2">明示年化 {report.facts.disclosure.quoted_apr === null ? '未提供' : `${percent(report.facts.disclosure.quoted_apr)}（${methodNames[report.facts.disclosure.quoted_method]}）`}。</p>
+          {canCompare ? <p className="mt-2">本工具的比较容差用于提示核对材料。</p> : null}
           {report.calculation ? <p className="mt-2">独立支付费用合计：{money(report.calculation.summary.total_additional_fees)}，不等同于未列入明示表的金额。</p> : null}
         </details>
       </div>

@@ -115,6 +115,22 @@ class CalculationTests(unittest.TestCase):
         self.assertEqual(comparison["disclosed_method"], "effective")
         self.assertEqual(comparison["computed_apr"], result["effective_apr"])
 
+    def test_explicit_simple_supports_regular_interest_only_with_final_principal(self):
+        request = periodic("200000", ["1333.33"] * 11 + ["201333.33"], quoted_apr="0.08", quoted_method="simple")
+        result = calculate(request)
+        self.assertEqual(result["simple_apr"], "0.0799998")
+        self.assertEqual(result["comparison"]["status"], "complete")
+        self.assertEqual(result["comparison"]["gap_pp"], "-0.00002")
+        self.assertFalse(result["comparison"]["exceeds_tolerance"])
+        self.assertEqual(calculate({**request, "quoted_method": "unknown"})["comparison"]["status"], "unavailable")
+        different_schedule = calculate(periodic("1000", ["510", "510"], quoted_apr="0.08", quoted_method="simple"))
+        self.assertIsNone(different_schedule["simple_apr"])
+        self.assertEqual(different_schedule["comparison"]["unavailable_reason"], "unsupported_cashflow_for_method")
+        no_quote = calculate(periodic("1000", ["1080"], periods_per_year=1))["comparison"]
+        self.assertIsNotNone(no_quote["computed_apr"])
+        self.assertEqual(no_quote["status"], "unavailable")
+        self.assertEqual(no_quote["unavailable_reason"], "missing_disclosed_apr")
+
     def test_unknown_dated_cashflows_do_not_invent_simple_day_count(self):
         request = {
             "timing": "dated",

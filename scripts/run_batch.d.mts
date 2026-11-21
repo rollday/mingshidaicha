@@ -19,6 +19,7 @@ export interface PreparedManifest {
   target_revision: string;
   grading_policy: string;
   mode: 'extract' | 'pipeline';
+  export_pdf?: boolean;
   samples: PreparedSample[];
   manifest_sha256: string;
 }
@@ -27,6 +28,9 @@ export interface BatchResult {
   status: 'completed' | 'failed';
   cleanup: 'not_needed' | 'deleted' | 'failed';
   elapsed_ms: number;
+  started_at: string;
+  finished_at: string;
+  pdf_sha256?: string;
   error?: string;
   generation_mode?: string | null;
   calculation_available?: boolean;

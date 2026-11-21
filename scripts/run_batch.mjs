@@ -24,6 +24,7 @@ export async function prepareManifest(manifestPath) {
   requireValue(/^[a-f0-9]{40}$/i.test(manifest.target_revision ?? ''), 'target_revision must be a full 40-character commit hash');
   requireValue(typeof manifest.grading_policy === 'string' && manifest.grading_policy.length > 0, 'grading_policy is required');
   requireValue(['extract', 'pipeline'].includes(manifest.mode), 'mode must be extract or pipeline');
+  requireValue(manifest.export_pdf === undefined || (typeof manifest.export_pdf === 'boolean' && manifest.mode === 'pipeline'), 'export_pdf is supported in pipeline mode');
   requireValue(Array.isArray(manifest.samples) && manifest.samples.length > 0, 'samples must be a non-empty array');
   const ids = new Set(), prepared = [];
   for (const sample of manifest.samples) {
@@ -138,7 +139,7 @@ export async function runBatch(manifest, { output, credentials, timeout = 180000
     started_at: new Date().toISOString(), base_url: manifest.base_url,
     target_revision_declared: manifest.target_revision, target_revision_verified_by_runner: false,
     expected_grading_policy: manifest.grading_policy, manifest_sha256: manifest.manifest_sha256,
-    runner_sha256: hash(await readFile(fileURLToPath(import.meta.url))), mode: manifest.mode,
+    runner_sha256: hash(await readFile(fileURLToPath(import.meta.url))), mode: manifest.mode, export_pdf: manifest.export_pdf ?? false,
     samples: manifest.samples.map(s => ({ id: s.id, text_sha256: s.text === undefined ? null : hash(s.text),
       documents: s.documents.map(d => ({ role: d.role, sha256: d.sha256 })),
       confirmation: manifest.mode === 'extract' ? 'none' : s.confirmedFacts ? 'provided_facts' : 'extracted_unreviewed',
@@ -159,7 +160,7 @@ export async function runBatch(manifest, { output, credentials, timeout = 180000
     await writeFile(logPath, '', { mode: 0o600, flag: 'wx' });
     const started = Date.now();
     let token, channel;
-    const result = { id: sample.id, status: 'failed', cleanup: 'not_needed' };
+    const result = { id: sample.id, status: 'failed', cleanup: 'not_needed', started_at: new Date(started).toISOString() };
     try {
       const session = await (await http('/api/sessions', { method: 'POST' })).json();
       requireValue(typeof session.session_token === 'string' && session.session_token, 'INVALID_SESSION_RESPONSE');
@@ -192,6 +193,17 @@ export async function runBatch(manifest, { output, credentials, timeout = 180000
         result.generation_mode = report.report.generation?.mode ?? null;
         result.calculation_available = Boolean(checked.calculation);
         result.calculation_error = events.find(event => event.type === 'case.calculation_unavailable')?.data?.code ?? null;
+        if (manifest.export_pdf) {
+          const response = await http('/api/reports/pdf', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ case_id: report.case_id, expected_revision: report.revision }),
+          }, token);
+          const bytes = Buffer.from(await response.arrayBuffer());
+          requireValue(response.headers.get('content-type')?.startsWith('application/pdf') &&
+            bytes.subarray(0, 5).toString() === '%PDF-', 'INVALID_REPORT_PDF');
+          await writeFile(resolve(directory, 'report.pdf'), bytes, { flag: 'wx', mode: 0o600 });
+          result.pdf_sha256 = hash(bytes);
+        }
       }
       result.status = 'completed'; // Transport completion, never a grading pass.
     } catch (error) {
@@ -204,6 +216,7 @@ export async function runBatch(manifest, { output, credentials, timeout = 180000
       channel?.close();
     }
     result.elapsed_ms = Date.now() - started;
+    result.finished_at = new Date().toISOString();
     await save(resolve(directory, 'result.json'), result);
     results.push(result);
     if (result.cleanup === 'failed') break;

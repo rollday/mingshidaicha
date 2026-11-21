@@ -49,6 +49,8 @@ task.started → case.confirmed → case.checked
 
 计算结果的 `comparison.method_basis` 区分 `explicit`、`assumed_simple` 和 `unavailable`；`disclosed_method` 保留用户确认的原始披露口径。原口径未知且满足单利计算条件时，可以展示“按单利推定”的结果，R02 仍列为待核实；不能计算或缺少标注值时不生成差额结论。
 
+`comparison.status` 为 `complete`、`provisional` 或 `unavailable`。完整比较同时提供披露年化、同口径重算值、有符号差额和是否超过容差。预计但未确认的单利口径为 `provisional`。无法比较时 `unavailable_reason` 区分缺少综合成本披露值、披露口径待确认和当前现金流无法按披露口径重算。其他可用年化继续保留并标注重算口径。明确标注单利且现金流为规则定额付息、到期一次还本时，可按实际支出计算单利年化。
+
 材料不足时会额外发出 `case.calculation_unavailable`，随后仍可能得到 `report.result`；AI 输出不可用时发出 `report.warning`，报告标记 `generation.mode=template`。两者均不应被前端当成整个任务失败。真正失败使用 `task.error` / `request.error`，包含 `code`、`message` 和可选 `details`。
 
 ## PDF 解析与原文定位

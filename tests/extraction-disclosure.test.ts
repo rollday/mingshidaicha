@@ -2,6 +2,25 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { CaseModel } from '../src/case-model.ts';
 import { caseFactsSchema } from '../src/domain.ts';
+
+test('source-backed disclosure keeps the APR, confirms its method when stated and does not relabel loan interest as total APR', async () => {
+  const table = '个人贷款综合融资成本明示表\n贷款利息\n';
+  for (const item of [
+    { text: table + '年化 18.2500%（月利率 1.520833%）\n其他息费\n无', expected: ['0.1825', 'nominal'] },
+    { text: table + '年化 8.0000%，单利计息，按月付息\n其他息费\n无', expected: ['0.08', 'simple'] },
+    { text: table + '年化 0.0000%（月利率 0.000000%）\n其他息费\n无', expected: ['0', 'unknown'] },
+    { text: table + '年化 7.2000%（月利率 0.600000%）\n每期费用\n另付 150.00 元', expected: [null, 'unknown'] },
+    { text: '借款年化利率 10.08%（单利）\n**借款年化综合资金成本：** 【16.08】**%**', expected: ['0.1608', 'unknown'] },
+    { text: table + '年化 8.0000%，单利计息\n到期一次性偿还本金 50000 元及利息\n4000 元，合计 54000 元\n违约或有成本', expected: ['0.08', 'simple'] },
+  ]) {
+    const model = new CaseModel(config);
+    model.json = async () => ({ facts: caseFactsSchema.parse({disclosure:{quoted_apr:'0.99', quoted_method:'xirr'}}), evidence:[], questions:[], conflicts:[] });
+    const result = await model.extract([{ id: 'd', role: 'contract', pages: [{ page: 1, text: item.text }] }], undefined, new AbortController().signal, () => {});
+    assert.deepEqual([result.facts.disclosure.quoted_apr, result.facts.disclosure.quoted_method], item.expected, item.text);
+    assert(result.evidence.every(evidence => item.text.includes(evidence.quote)));
+    assert.equal(result.evidence.some(evidence => evidence.field === 'disclosure.quoted_apr'), item.expected[0] !== null);
+  }
+});
 import { config } from '../src/config.ts';
 
 test('extraction does not turn unproven missing disclosure into confirmed defects', async () => {

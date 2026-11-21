@@ -61,8 +61,20 @@ export type RuleResult = ReturnType<typeof import('../shared/rule-policy.ts').gr
   citation: { document: string; article: string; quote: string; url: string; effective_date: string; verification: 'official_checked' | 'local_material_only' } | null;
   evidence_ids: string[];
 };
+export type AprComparison = {
+  method: string;
+  method_basis?: 'explicit' | 'assumed_simple' | 'unavailable';
+  disclosed_method?: string;
+  method_label?: string;
+  status?: 'complete' | 'provisional' | 'unavailable';
+  unavailable_reason?: 'missing_disclosed_apr' | 'unconfirmed_disclosed_method' | 'unsupported_cashflow_for_method' | null;
+  quoted_apr: string | null;
+  computed_apr: string | null;
+  gap_pp: string | null;
+  exceeds_tolerance: boolean | null;
+};
 export type LoanResult = {
-  input: unknown; calculation: { cashflows: unknown[]; nominal_apr: string | null; effective_apr: string | null; simple_apr: string | null; xirr_apr: string | null; comparison: { method: string; method_basis?: 'explicit' | 'assumed_simple' | 'unavailable'; disclosed_method?: string; method_label?: string; quoted_apr: string | null; computed_apr: string | null; gap_pp: string | null; exceeds_tolerance: boolean | null } };
+  input: unknown; calculation: { cashflows: unknown[]; nominal_apr: string | null; effective_apr: string | null; simple_apr: string | null; xirr_apr: string | null; comparison: AprComparison };
   summary: { principal: string; disbursed: string; total_repayment: string; total_additional_fees: string; total_payment: string; total_cost: string };
   fee_totals: { id: string; name: string; total: string; contingent: boolean }[];
   fee_ledger?: { fee_index: number; id: string; name: string;
