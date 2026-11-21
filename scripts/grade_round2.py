@@ -10,7 +10,6 @@ from collections import defaultdict
 from decimal import Decimal, ROUND_HALF_UP, getcontext
 from pathlib import Path
 
-getcontext().prec = 90
 MONEY_LIMIT = Decimal("0.01")
 RATE_LIMIT_PP = Decimal("0.01")
 DISCLOSURE_LIMIT_PP = Decimal("0.5")
@@ -100,12 +99,23 @@ def score_pdf(path, result, calc):
     rate = cmp.get("computed_apr") if available else calc.get("nominal_apr") or calc.get("xirr_apr")
     if dec(rate) is None or "按材料重算" not in text:
         return ["final.pdf_missing_recomputed_rate"]
-    displayed = f"{(dec(rate) * 100).quantize(Decimal('.01'), rounding=ROUND_HALF_UP):.2f}%"
-    if displayed.replace("-0.00%", "0.00%") not in text:
+    def display(value):
+        rounded = value.quantize(Decimal(".01"), rounding=ROUND_HALF_UP)
+        return f"{abs(rounded) if not rounded else rounded:.2f}"
+
+    displayed = display(dec(rate) * 100) + "%"
+    rendered_rate = re.search(r"按材料重算(-?[\d,]+\.\d+%)", text)
+    if not rendered_rate or rendered_rate[1].replace(",", "").replace("-0.00%", "0.00%") != displayed.replace("-0.00%", "0.00%"):
         return ["final.pdf_rate_mismatch"]
     if available:
-        expected_label = {"nominal": "名义年化", "simple": "单利年化", "effective": "复利年化", "xirr": "按实际日期年化"}
-        if "比较差额" not in text or expected_label.get(cmp.get("method"), "口径未核实") not in text:
+        methods = {"nominal": "名义年化", "simple": "单利年化", "effective": "复利年化", "xirr": "按实际日期年化"}
+        quoted, gap = dec(cmp.get("quoted_apr")), dec(cmp.get("gap_pp"))
+        threshold_word = "超过" if cmp.get("exceeds_tolerance") else "未超过"
+        normalized = text.replace("-0.00", "0.00")
+        if (quoted is None or gap is None or
+                "明示年化" + display(quoted * 100) + "%" not in normalized or
+                "比较差额" + display(gap) + "个百分点，" + threshold_word + "比较容差" not in normalized or
+                methods.get(cmp.get("method"), "口径未核实") not in normalized):
             return ["final.pdf_comparison_missing"]
     else:
         reasons = {"missing_disclosed_apr": "材料未提供可比较的综合融资成本年化",
@@ -129,10 +139,12 @@ def score_attempt(path, gold, result, sample_hash):
         errors.append("execution." + (result.get("error") or "incomplete_or_cleanup_failed"))
     if sample_hash != gold.get("final_sha256"):
         errors.append("input.hash_mismatch")
-    if not calc:
-        errors.append("final.no_calculation")
-        return errors, [], {}, {}
     expected_flows = flows_by_time(expected)
+    if not calc:
+        errors.append("final.no_calculation" + ("." + result["calculation_error"] if result.get("calculation_error") else ""))
+        absent = [{"time": point, "gold": str(value), "model": "", "diff_yuan": "", "pass": False}
+                  for point, value in expected_flows.items()]
+        return errors, absent, {}, {}
     try:
         actual_flows = flows_by_time(calc.get("cashflows", []))
     except (ValueError, KeyError, TypeError):
@@ -145,7 +157,8 @@ def score_attempt(path, gold, result, sample_hash):
         passed = abs(difference) <= MONEY_LIMIT and not (point not in actual_flows and g != 0)
         if not passed and "cashflow.amount" not in errors:
             errors.append("cashflow.amount")
-        lines.append({"time": point, "gold": str(g), "model": str(a), "diff_yuan": str(difference), "pass": passed})
+        lines.append({"time": point, "gold": str(g), "model": str(a) if point in actual_flows or g == 0 else "",
+                      "diff_yuan": str(difference) if point in actual_flows or g == 0 else "", "pass": passed})
     if not expected_flows:
         errors.append("cashflow.gold_missing")
     for field, value in (gold.get("facts") or {}).items():
@@ -206,6 +219,8 @@ def load_attempts(dirs, revision):
             seen.add(key)
             folder = directory / sample["id"]
             result = json_file(folder / "result.json")
+            if not result and (folder / "events.jsonl").is_file():
+                result = {"status": "interrupted", "error": "RUN_INTERRUPTED"}
             if result:
                 documents = sample["documents"]
                 sample_hash = documents[0]["sha256"] if len(documents) == 1 else None
@@ -245,9 +260,10 @@ def grade(gold, attempts):
                 details.extend({"sample_id": sid, "round": round_no, "attempt": number, **line} for line in lines)
                 if number == 1:
                     first_errors = errors
+                    differences = [abs(Decimal(x["diff_yuan"])) for x in lines if x["diff_yuan"] != ""]
                     row.update(first_outcome=code or outcome, reference_outcome=outcome, issues=" | ".join(errors),
                                rates=rates, comparison=comparison,
-                               max_cash_diff_yuan=str(max(abs(Decimal(x["diff_yuan"])) for x in lines)) if lines else None)
+                               max_cash_diff_yuan=str(max(differences)) if differences else None)
             row["verdict"] = ("UNSCORABLE" if not verified or row["first_outcome"] == "not_run"
                               else "FAIL" if first_errors else "PASS")
             sample_rounds.append(row)
@@ -280,6 +296,7 @@ def grade(gold, attempts):
 
 
 def main():
+    getcontext().prec = 90
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--gold", type=Path, required=True)
     parser.add_argument("--revision", required=True)

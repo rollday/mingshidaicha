@@ -1,4 +1,4 @@
-import type { CaseExtraction, CaseFacts, Evidence } from '../src/domain.ts';
+import type { CaseExtraction, CaseFacts, Evidence, SourceMaterial } from '../src/domain.ts';
 
 export type FeePrefill = {
   fee_id: string; field: string; value: boolean;
@@ -6,6 +6,7 @@ export type FeePrefill = {
   rule_id: string; reason: string; evidence_ids: string[];
 };
 const clean = (s: string) => s.normalize('NFKC').replace(/\s/g, '').replace(/\d{1,3}(?:,\d{3})+(?:\.\d+)?/g, n => n.replace(/,/g, ''));
+const feeName = (s: string) => clean(s).replace(/\((?:每期|每月|放款(?:日|时)一次性(?:扣费|扣除|收取)?)\)$/, '');
 const path = (s: string) => s.replace(/^facts\./, '');
 const escape = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 const num = '(\\d+(?:\\.\\d+)?)';
@@ -28,11 +29,13 @@ function decimal(s: string): [bigint, bigint] {
 function eq(a: string, b: string): boolean {
   const [x, sx] = decimal(a), [y, sy] = decimal(b); return x * sy === y * sx;
 }
-function sumFits(amounts: string[], principal: string, disbursed = '0'): boolean {
+function sumFits(amounts: string[], principal: string, disbursed = '0', exact = false): boolean {
   const all = [principal, disbursed, ...amounts];
   const scale = 10n ** BigInt(Math.max(...all.map(s => s.split('.')[1]?.length ?? 0)));
   const ints = all.map(s => { const [n, d] = decimal(s); return n * (scale / d); });
-  return ints.slice(2).reduce((a, b) => a + b, 0n) <= ints[0]! - ints[1]!;
+  const sum = ints.slice(2).reduce((a, b) => a + b, 0n);
+  const capacity = ints[0]! - ints[1]!;
+  return exact ? sum === capacity : sum <= capacity;
 }
 function components(s: string): { name: string; amount: string }[] | null {
   const values = s.replace(/[)）]$/, '').split(/[,，、]|以及|及|和/);
@@ -42,6 +45,62 @@ function components(s: string): { name: string; amount: string }[] | null {
 }
 function contains(rows: ReturnType<typeof components>, name: string, amount: string): boolean {
   return !!rows?.some(row => row.name === name && eq(row.amount, amount));
+}
+
+type BoundFee = { value: boolean; amounts: string[]; base?: string; total?: string };
+const statedTotal = '(?:每月|每期)(?:还款总额|应还总额|应还合计|合计应付|还款额|还款合计)(?:为|[:：])?(?:人民币)?' + num + '元';
+const breakdown = new RegExp(statedTotal + '(?:\\(其中|,其中):?([^。;；)]+?)(?=[)。;；]|$)', 'g');
+
+function boundFee(facts: CaseFacts, fee: CaseFacts['fees'][number], quote: string): BoundFee | undefined {
+  if (fee.contingent !== false || fee.amount === null || unsafe.test(quote)) return;
+  const name = feeName(fee.name);
+  if (!name) return;
+  const loan = facts.loan;
+  if (fee.timing === 'upfront' && loan.principal !== null && loan.disbursed !== null) {
+    const match = quote.match(new RegExp('(?:放款(?:日|时))[^。;；]{0,35}一次性收取' + escape(name) + num +
+      '元,从(?:借款|贷款)?本金中(?:直接)?扣除[。，,;；](?:\\d+\\.\\d+)?(?:故)?实际到账(?:净额|金额)?[:：]?(?:人民币)?' + num + '元'));
+    if (match && eq(match[1]!, fee.amount) && eq(match[2]!, loan.disbursed) &&
+        sumFits([fee.amount], loan.principal, loan.disbursed, true)) return { value: true, amounts: [fee.amount] };
+  }
+  if (fee.timing !== 'per_period' || facts.repayments.length || loan.repay_method !== 'equal_installment' || loan.period_payment === null) return;
+  for (const match of quote.matchAll(breakdown)) {
+    const content = match[2]!.replace(/(?:^|[+、,])(?:每期|每月)(?:偿还|支付|应还)?/g, separator => separator.replace(/[^+、,]/g, ''));
+    const rows = components(content.replace(/\+/g, '、'));
+    if (!rows || rows.filter(row => row.name === name).length !== 1 || !contains(rows, name, fee.amount)) continue;
+    if (!sumFits(rows.map(row => row.amount), match[1]!, '0', true)) continue;
+    const base = rows.filter(row => /^(?:借款|贷款)?(?:本息|本金)$/.test(row.name));
+    if (eq(match[1]!, loan.period_payment)) return { value: true, amounts: rows.map(row => row.amount), base: base.length === 1 ? base[0]!.amount : undefined, total: match[1] };
+    if (base.length === 1 && eq(base[0]!.amount, loan.period_payment)) return { value: false, amounts: [fee.amount], base: base[0]!.amount, total: match[1] };
+  }
+}
+
+/** Keep the exact clauses when the model quotes only part of a fee breakdown. */
+export function addFeeBreakdownEvidence(output: CaseExtraction, materials: SourceMaterial[]): void {
+  if (!validNumbers(output.facts)) return;
+  for (const [index, fee] of output.facts.fees.entries()) {
+    if (fee.contingent !== false || fee.amount === null || !['upfront', 'per_period'].includes(fee.timing)) continue;
+    const field = `fees[${index}].included_in_cashflows`;
+    const seen = new Set(output.evidence.filter(item => path(item.field) === field).map(item => clean(item.quote)));
+    for (const material of materials) for (const page of material.pages) {
+      const lines = page.text.split('\n');
+      for (let n = 0; n < lines.length; n++) {
+        if (!/每期|每月|放款/.test(lines[n]!)) continue;
+        for (let length = 1; length <= 3; length++) {
+          const quote = lines.slice(n, n + length).join('\n').trim();
+          const compact = clean(quote);
+          if (quote.length > 600 || !boundFee(output.facts, fee, compact)) continue;
+          if (!seen.has(compact)) {
+            let id = `bound-fee-${index}-${output.evidence.length}`;
+            while (output.evidence.some(existing => existing.id === id)) id += '-source';
+            output.evidence.push({ id, field, quote, document_id: material.id, page: page.page,
+              source_type: material.vision ? 'vision_transcript' : 'text' });
+            seen.add(compact);
+          }
+          break;
+        }
+      }
+    }
+  }
 }
 // Every quotation assigned to an A1 numeric field must bind the selected
 // value to that field's meaning. An unrelated matching number is no support.
@@ -116,28 +175,40 @@ export function inferFeePrefills(facts: CaseFacts, evidence: Evidence[], conflic
     if (fee.contingent !== false || fee.amount === null || !['upfront', 'per_period'].includes(fee.timing)) continue;
     const oldIndex = sourceFacts.fees.findIndex(f => f.id === fee.id);
     if (oldIndex < 0 || facts.fees.filter(f => f.id === fee.id).length !== 1 || sourceFacts.fees.filter(f => f.id === fee.id).length !== 1) continue;
-    const name = clean(fee.name), old = sourceFacts.fees[oldIndex]!;
-    if (!name || clean(old.name) !== name || facts.fees.filter(f => clean(f.name) === name).length !== 1 ||
-        sourceFacts.fees.filter(f => clean(f.name) === name).length !== 1 || old.timing !== fee.timing) continue;
+    const name = feeName(fee.name), old = sourceFacts.fees[oldIndex]!;
+    const sameTimingAndName = (other: CaseFacts['fees'][number]) => other.timing === fee.timing && feeName(other.name) === name;
+    if (!name || !sameTimingAndName(old) || facts.fees.filter(sameTimingAndName).length !== 1 ||
+        sourceFacts.fees.filter(sameTimingAndName).length !== 1) continue;
     const prefix = `fees[${oldIndex}]`, affected = [prefix, 'loan', 'repayments'];
     if (conflicts.some(c => affected.some(a => path(c.field) === a || path(c.field).startsWith(a + '.') || path(c.field).startsWith(a + '[') || a.startsWith(path(c.field) + '[')))) continue;
+    const loanFields = fee.timing === 'upfront' ? ['loan.disbursed', 'loan.principal'] : ['loan.period_payment'];
     const relevant = evidence.filter(e => path(e.field).startsWith(prefix + '.') ||
-      (path(e.field).startsWith('loan.') && clean(e.quote).includes(name)));
+      (loanFields.includes(path(e.field)) && clean(e.quote).includes(name)));
     if (!relevant.length || relevant.some(e => unsafe.test(clean(e.quote)))) continue;
     const positive: { e: Evidence; amounts: string[] }[] = [], negative: Evidence[] = [];
     let contradictory = false, unboundSeparate = false;
     const selected = fee.timing === 'upfront' ? facts.loan.disbursed : facts.loan.period_payment;
     if (selected === null || (fee.timing === 'per_period' && (facts.repayments.length || facts.loan.repay_method !== 'equal_installment'))) continue;
+    const bindings = new Map(relevant.map(e => [e.id, boundFee(facts, fee, clean(e.quote))]));
+    const boundTotals = [...bindings.values()].flatMap(binding => [binding?.base, binding?.total].filter(x => x !== undefined));
     const feeToken = escape(name) + '(?:为|[:：])?' + num + '元';
     for (const e of relevant) {
       const quote = clean(e.quote);
+      const binding = bindings.get(e.id);
+      if (binding?.value === true) positive.push({ e, amounts: binding.amounts });
+      if (binding?.value === false) negative.push(e);
       // A second, named statement of separate collection can contradict an
       // inclusion even without repeating the selected total. It never alone
       // establishes a false suggestion relative to that total.
       const looseFee = escape(name) + '(?:(?:为|[:：])?' + num + '元)?';
       const collection = '(?:另行|另外|额外|单独|另)(?:收取|扣收|支付|收|付|计费)';
-      if (new RegExp(looseFee + '(?:[,，])?(?:需|须|应)?' + collection).test(quote) ||
-          new RegExp(collection + looseFee).test(quote)) unboundSeparate = true;
+      const baseExclusion = new RegExp(
+        '(?:除(?:每期)?(?:应还)?贷款本息外[^。;；]{0,65}' + collection + feeToken +
+        '|' + escape(name) + '不(?:包含|计入)在每期应还贷款本息之内)', 'g');
+      const otherStatements = boundTotals.length ? quote.replace(baseExclusion, '') : quote;
+      const separateFromBase = otherStatements !== quote;
+      if (new RegExp(looseFee + '(?:[,，])?(?:需|须|应)?' + collection).test(otherStatements) ||
+          new RegExp(collection + looseFee).test(otherStatements)) unboundSeparate = true;
       const waiver = '(?:免收|免除|减免|取消|不收取|(?:无需|无须|不必)(?:支付|缴纳|收取))';
       if (new RegExp(looseFee + '(?:已|予以)?' + waiver).test(quote) || new RegExp(waiver + looseFee).test(quote)) contradictory = true;
       // Only a negation explicitly binding the named fee to the selected total
@@ -150,9 +221,13 @@ export function inferFeePrefills(facts: CaseFacts, evidence: Evidence[], conflic
         .some(m => eq(m[1]!, selected) && contains(components(m[2]!), name, fee.amount!));
       const explicitExclusion = reverseExclusion || forwardExclusion;
       if (explicitExclusion) negative.push(e);
-      if (!explicitExclusion && /(?:不|未|尚未|并未|没有|并非|不是)[^。；;]{0,20}(?:包含|包括|含|扣除|扣减|计入|纳入)/.test(quote)) contradictory = true;
+      if (!explicitExclusion && /(?:不|未|尚未|并未|没有|并非|不是)[^。；;]{0,20}(?:包含|包括|含|扣除|扣减|计入|纳入)/.test(otherStatements)) contradictory = true;
       const totals = [...quote.matchAll(new RegExp(fee.timing === 'upfront' ? receipt : total, 'g'))];
-      if (totals.some(m => !eq(m[1]!, selected))) { contradictory = true; continue; }
+      const canMentionBaseAndTotal = binding || separateFromBase || path(e.field) === 'loan.period_payment';
+      if (totals.some(match => !eq(match[1]!, selected) && (!canMentionBaseAndTotal || !boundTotals.some(value => eq(value, match[1]!))))) {
+        contradictory = true;
+        continue;
+      }
       if (fee.timing === 'per_period') {
         for (const m of quote.matchAll(new RegExp(total + '(?:[,，(（])?(?:其中)?(?:已)?(?:包含|包括|含)([^。；;]+)', 'g'))) {
           const rows = components(m[2]!);

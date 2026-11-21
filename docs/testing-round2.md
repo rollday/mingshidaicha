@@ -114,6 +114,14 @@ node scripts/run_batch.mjs \
 
 当前 `/api/health` 不返回 commit，也不实时探测上游模型。因此脚本把 `target_revision` 记录为**外部声明值**，并明确写入 `target_revision_verified_by_runner=false`。正式运行前后应由部署方核对镜像修订；测试期间冻结部署。
 
+## 第二轮收尾评分
+
+按 `T19-r1-a1` 格式为样本设置唯一清单 ID，包含样本编号、轮次和尝试次序。验收记录一次尝试一个目录，清单启用 PDF 导出。先跑 T19–T22 各三轮，四个样本均满足金标准后再跑 T01–T18。
+
+离线运行 `python3 scripts/grade_round2.py --gold expected_values.csv --revision <完整提交哈希> --runs <批跑输出目录> --output <新目录>`。评分机须安装 `pdftotext`。评分脚本核对账本、利率、comparison、规则及最终报告和 PDF。现金流误差上限为 0.01 元，利率误差和三轮波动上限为 0.01 个百分点。0.5 个百分点仅用于核对是否超过披露比较容差。首次结果和重试分开保存。
+
+金标准 CSV 每行一份样本，含 `sample_id`、`final_sha256`、`gold_status`、`source_status`、`grading_policy`，以及 `facts_json`、`cashflows_json`、`rates_json`、`comparison_json`、`rules_json`。金额和利率用十进制字符串，现金流按期或按日期逐笔登记。只有来源与金标准均标为 `verified`，且具备全部核查规则的独立预期，该样本方可正式评分。未封存、缺原件或证据不齐的样本为 `UNSCORABLE`。
+
 ## grading_policy 与 expected_values.csv 的边界
 
 `grading_policy=2026-10-29.v2` 是产品规则的分级策略版本，不自动等于评分方计算准确率、召回率、误报率等指标的评分细则。资料包中的 `grading_policy.json` 是当前项目策略的机器可读快照；完整规则适用条件仍以 `rules.md` 和对应代码为准。

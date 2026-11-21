@@ -153,6 +153,8 @@ def _formatted_number(value: Any, places: int = 2, shift: int = 0) -> str:
     quantum = Decimal(1).scaleb(-places)
     try:
         rounded = (number * (Decimal(10) ** shift)).quantize(quantum, rounding=ROUND_HALF_UP)
+        if rounded.is_zero():
+            rounded = abs(rounded)
         return f"{rounded:,.{places}f}"
     except (InvalidOperation, OverflowError):
         return "待确认"

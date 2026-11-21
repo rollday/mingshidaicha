@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { caseFactsSchema, type CaseFacts, type Evidence } from '../src/domain.ts';
-import { inferFeePrefills } from '../shared/fee-prefill.ts';
+import { addFeeBreakdownEvidence, inferFeePrefills } from '../shared/fee-prefill.ts';
 
 const make = (): CaseFacts => caseFactsSchema.parse({
   loan: { principal: '20000', disbursed: '18871', period_payment: '913.69', term_periods: 24,
@@ -32,6 +32,28 @@ test('synthetic v3 single net deduction and included recurring amounts use selec
   assert.equal(inferFeePrefills(facts, [evidence('fees[0].amount','扣除服务费4441元后，实际到账15559元。')], [])[0]?.value, true);
   const included = make(); included.loan.period_payment = '1121.69';
   assert.deepEqual(inferFeePrefills(included, recurring('每期还款总额1121.69元，含担保费120元、平台费88元。'), []).map(r => r.value), [true,true]);
+});
+
+test('the same named fee can be deducted upfront and charged monthly when each occurrence is independently bound', () => {
+  const clauses = [
+    '1.2 放款日一次性扣费：乙方于放款日一次性收取平台服务费 1,000.00 元，从借款本金中直接扣除。',
+    '1.3 实际到账金额：人民币 49,000.00 元。',
+    '除贷款本息外，甲方每期另支付平台服务费 150.00 元。',
+    '每期还款额',
+    '4,480.95 元（其中贷款本息 4,330.95 元 + 每期平台服务费 150.00 元）',
+  ];
+  for (const [period_payment, recurring] of [['4480.95', true], ['4330.95', false]] as const) {
+    const facts = caseFactsSchema.parse({ loan: { principal: '50000', disbursed: '49000', period_payment, repay_method: 'equal_installment' },
+      fees: [{ id: 'up', name: '平台服务费（放款日一次性扣费）', timing: 'upfront', amount: '1000', contingent: false },
+        { id: 'period', name: '平台服务费（每期）', timing: 'per_period', amount: '150', contingent: false }] });
+    const extraction = { facts, evidence: [evidence('fees[1].amount', clauses[2]!)], questions: [], conflicts: [] };
+    const material = { id: 'doc', role: 'contract' as const, pages: [{ page: 1, text: clauses.join('\n') }] };
+    addFeeBreakdownEvidence(extraction, [material]);
+    assert.deepEqual(inferFeePrefills(facts, extraction.evidence, []).map(item => [item.fee_id, item.value]), [['up', true], ['period', recurring]]);
+    facts.loan.disbursed = '48500';
+    facts.loan.period_payment = '4500';
+    assert.deepEqual(inferFeePrefills(facts, extraction.evidence, []), []);
+  }
 });
 
 test('independently evidenced A1 allows co-collection only for verified standard annuity', () => {
