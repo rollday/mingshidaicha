@@ -22,7 +22,7 @@ _ONE = Decimal(1)
 
 
 def _missing(fields: list[str]) -> None:
-    raise CalculationError("MISSING_FIELDS", "Required confirmed loan fields are missing", {"fields": fields})
+    raise CalculationError("MISSING_FIELDS", "缺少完成核算所需的已确认字段，请补充或核对后重新计算。", {"fields": fields})
 
 
 def _number(value: Any, field: str, *, positive: bool = False, nonnegative: bool = False) -> Decimal:

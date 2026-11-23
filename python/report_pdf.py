@@ -343,6 +343,11 @@ def _append_key_metrics(story: list[Any], report: dict[str, Any], styles: dict[s
             "missing_disclosed_apr" if comparison.get("quoted_apr") is None else "unconfirmed_disclosed_method"
         )
         gap = "未完成同口径比较。" + reasons.get(reason, "缺少完整比较结果")
+        if reason == "unsupported_cashflow_for_method" and comparison.get("quoted_apr") is not None:
+            alternatives = [label for key, label in (("nominal_apr", "名义年化"), ("effective_apr", "复利年化"), ("xirr_apr", "按实际日期年化"))
+                            if _number(results.get(key)) is not None]
+            if alternatives:
+                gap += "。披露数值可能对应" + "、".join(alternatives) + "口径，请核对披露口径标注；这不是利率标错的认定。"
     rows = [
         ["明示年化", f"{_percent(comparison.get('quoted_apr'))}（{_method(comparison.get('disclosed_method'))}）"],
         ["按材料重算", f"{_percent(recomputed)}（{method}）" if recomputed is not None else "暂不可用"],
@@ -429,6 +434,26 @@ def _append_fee_prefills(story: list[Any], report: dict[str, Any], styles: dict[
             story.append(_paragraph("原文摘录暂不可用，请核对原始材料。", styles["small"]))
 
 
+
+def _fallback_fee_total(fee: dict[str, Any], facts: dict[str, Any]) -> str:
+    """Multiply a confirmed per-period fee by the confirmed term without a ledger.
+
+    Only used when the full calculation is unavailable; the label makes clear
+    this is an arithmetic reference, not the reconciled ledger total.
+    """
+    amount = _number(fee.get("amount"))
+    loan = facts.get("loan") if isinstance(facts.get("loan"), dict) else {}
+    term = loan.get("term_periods")
+    timing = _plain(fee.get("timing"), fallback="unknown", maximum=50)
+    if amount is None:
+        return "金额待确认"
+    if timing == "per_period" and isinstance(term, int) and not isinstance(term, bool) and 1 <= term <= 600:
+        total = amount * term
+        return f"{_formatted_number(total)} 元（{term} 期 × 单次金额，供参考，未完成对账）"
+    if timing in ("upfront", "at_maturity"):
+        return f"{_money(fee.get('amount'))}（单次收取，未完成对账）"
+    return "计入方式待确认，暂无法合计"
+
 def _append_fees(story: list[Any], report: dict[str, Any], styles: dict[str, ParagraphStyle]) -> None:
     _section(story, "费用明细", styles)
     facts = report.get("facts") if isinstance(report.get("facts"), dict) else {}
@@ -446,6 +471,10 @@ def _append_fees(story: list[Any], report: dict[str, Any], styles: dict[str, Par
         contingent = fee.get("contingent")
         total = totals_by_id.get(fee_id, {}).get("total")
         total_text = _money(total) if contingent is False and total is not None else "或有费用" if contingent is True else "条件待确认"
+        if contingent is False and total is None:
+            # Deterministic arithmetic from confirmed facts, not a model claim:
+            # a fixed per-period amount over a confirmed term has a fixed total.
+            total_text = _fallback_fee_total(fee, facts)
         payee_type = _PAYEE_TYPES.get(_plain(fee.get("payee_type"), fallback="unknown", maximum=50), "主体待确认")
         timing = _FEE_TIMING.get(_plain(fee.get("timing"), fallback="unknown", maximum=50), "时间待确认")
         details = f"收取主体：{_plain(fee.get('payee'))}（{payee_type}）；发生时间：{timing}；是否或有：{_tri(contingent)}；明示表：{_tri(fee.get('in_disclosure'))}；当前计入方式：{_fee_accounting(fee)}；已计入明示成本：{_tri(fee.get('included_in_disclosed_cost'))}"

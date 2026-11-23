@@ -334,3 +334,28 @@ class LoanPlanTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+    def test_mock_contract_zero_interest_service_fee_reconciles(self):
+        # 2026-11-23 mock contract: 24000 principal, 24 x 1120 (1000 + 120 fee),
+        # 0% interest. Effective APR ~11.712%, nominal ~11.1267%; the disclosed
+        # "simple" label cannot be recomputed for a multi-period schedule.
+        case = facts(principal="24000", disbursed="24000", term_periods=24,
+                     period_payment="1120", nominal_apr="0")
+        case["fees"] = [{"id": "f1", "name": "服务费", "amount": "120", "timing": "per_period",
+                         "included_in_cashflows": True, "contingent": False}]
+        case["disclosure"] = {"quoted_apr": "0.1171", "quoted_method": "simple"}
+        result = calculate_loan(case)
+        self.assertEqual(result["summary"]["total_repayment"], "26880")
+        self.assertEqual(result["summary"]["total_additional_fees"], "0")
+        self.assertEqual(result["summary"]["total_cost"], "2880")
+        self.assertEqual(result["fee_totals"][0]["total"], "2880")
+        self.assertLess(abs(Decimal(result["calculation"]["effective_apr"]) - Decimal("0.1171200157")), Decimal("1e-9"))
+        comparison = result["calculation"]["comparison"]
+        self.assertEqual(comparison["status"], "unavailable")
+        self.assertEqual(comparison["unavailable_reason"], "unsupported_cashflow_for_method")
+
+    def test_missing_fields_message_is_chinese(self):
+        with self.assertRaises(CalculationError) as caught:
+            calculate_loan(facts(disbursed=None))
+        self.assertEqual(caught.exception.code, "MISSING_FIELDS")
+        self.assertIn("缺少完成核算所需的已确认字段", caught.exception.message)

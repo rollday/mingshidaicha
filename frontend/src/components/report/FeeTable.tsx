@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react';
 import type { AuditReport, CaseFacts } from '../../types/audit.ts';
 import { money, triState } from '../../lib/format.ts';
+import { estimateFeeTotal } from '../../../../shared/fee-total.ts';
 import { Card, Tag, Table, type Column } from '../base/index.tsx';
 
 const columns: Column[] = [
@@ -34,11 +35,12 @@ export function FeeTable({ report }: { report: AuditReport }) {
   const unconfirmedAccounting = regular.filter((fee) => fee.included_in_cashflows === null);
   const rowsFor = (fees: typeof report.facts.fees) => fees.map((fee) => {
     const total = totals.get(fee.id);
+    const estimate = total ? null : estimateFeeTotal(fee, report.facts.loan.term_periods);
     const totalLabel = fee.contingent === true
       ? '或有费用，单独列示'
       : fee.contingent === null
         ? '发生条件待确认'
-        : total ? money(total.total) : '尚未核算';
+        : total ? money(total.total) : estimate ? `${money(estimate.total)}（${estimate.basis}）` : '尚未核算';
     return {
       name: <span className="flex flex-wrap items-center gap-2">{fee.name}{fee.contingent === true ? <Tag tone="amber">或有费用</Tag> : null}</span>,
       amount: fee.amount === null ? '待确认' : money(fee.amount),
@@ -103,12 +105,12 @@ export function FeeTable({ report }: { report: AuditReport }) {
         <details className="mt-3 border-t border-line pt-3">
           <summary className="cursor-pointer text-sm font-medium text-blue">查看全部费用与披露信息</summary>
           <div className="mt-4">
-        {regular.length ? <FeeGroup label="非或有费用" fees={regular} totals={totals} rows={rowsFor(regular)} /> : <p className="py-2 text-sm text-mute">没有已确认的非或有费用项目。</p>}
-        {unknown.length > 0 && <div className="mt-5 border-t border-line pt-4"><h3 className="mb-2 text-base font-medium">费用发生条件待确认</h3><FeeGroup label="待确认费用" fees={unknown} totals={totals} rows={rowsFor(unknown)} /></div>}
+        {regular.length ? <FeeGroup label="非或有费用" fees={regular} totals={totals} rows={rowsFor(regular)} termPeriods={report.facts.loan.term_periods} /> : <p className="py-2 text-sm text-mute">没有已确认的非或有费用项目。</p>}
+        {unknown.length > 0 && <div className="mt-5 border-t border-line pt-4"><h3 className="mb-2 text-base font-medium">费用发生条件待确认</h3><FeeGroup label="待确认费用" fees={unknown} totals={totals} rows={rowsFor(unknown)} termPeriods={report.facts.loan.term_periods} /></div>}
         {contingent.length ? (
           <div className="mt-5 border-t border-line pt-4">
             <h3 className="mb-2 text-base font-medium">或有费用（单独列示，不计入上方常规合计）</h3>
-            <FeeGroup label="或有费用" fees={contingent} totals={totals} rows={rowsFor(contingent)} />
+            <FeeGroup label="或有费用" fees={contingent} totals={totals} rows={rowsFor(contingent)} termPeriods={report.facts.loan.term_periods} />
           </div>
         ) : null}
         <div className="mt-5 grid gap-2 border-t border-line pt-4 sm:grid-cols-3">
@@ -136,21 +138,24 @@ function FeeGroup({
   fees,
   totals,
   rows,
+  termPeriods,
 }: {
   label: string;
   fees: AuditReport['facts']['fees'];
   totals: Map<string, NonNullable<AuditReport['calculation']>['fee_totals'][number]>;
   rows: Record<string, ReactNode>[];
+  termPeriods: number | null;
 }) {
   return <>
     <div className="flex flex-col gap-3 sm:hidden" aria-label={label}>
       {fees.map((fee) => {
         const total = totals.get(fee.id);
+        const estimate = total ? null : estimateFeeTotal(fee, termPeriods);
         const totalLabel = fee.contingent === true
           ? '或有费用，单独列示'
           : fee.contingent === null
             ? '发生条件待确认'
-            : total ? money(total.total) : '尚未核算';
+            : total ? money(total.total) : estimate ? `${money(estimate.total)}（${estimate.basis}）` : '尚未核算';
         return <article key={fee.id} className="rounded-md bg-canvas p-4">
           <h4 className="text-base font-medium">{fee.name}</h4>
           <dl className="mt-3 grid grid-cols-2 gap-x-4 gap-y-2 text-sm">

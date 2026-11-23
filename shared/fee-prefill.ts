@@ -11,7 +11,7 @@ const path = (s: string) => s.replace(/^facts\./, '');
 const escape = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 const num = '(\\d+(?:\\.\\d+)?)';
 const end = '(?:元|人民币|(?=[,，、;；。()（）]|$))';
-const total = '(?:每期|每月)(?:还款总额|还款合计|应还总额|应还合计|扣款总额|还款额|应还本息|本息|还款)(?:为|[:：])?' + num + end;
+const total = '(?:每期|每月)(?:还款总额|还款合计|应还总额|应还合计|扣款总额|还款额|应还本息|本息|应还|还款)(?:为|[:：])?(?:人民币)?' + num + end;
 const receipt = '(?:实际到账(?:净额)?|到账净额|实收净额)(?:为|[:：])?' + num + end;
 const unsafe = /如果|假设|假定|示例|例如|举例|示范|示意|仅供|不适用|拟扣除|预计到账|将扣除|可能|若|除非|仅在/;
 // The browser calls this while fields are being edited, before schema parsing.
@@ -39,7 +39,7 @@ function sumFits(amounts: string[], principal: string, disbursed = '0', exact = 
 }
 function components(s: string): { name: string; amount: string }[] | null {
   const values = s.replace(/[)）]$/, '').split(/[,，、]|以及|及|和/);
-  const rows = values.map(item => /^([^\d:：()（）]{1,80}?)(?:为|[:：])?(\d+(?:\.\d+)?)元?$/.exec(item));
+  const rows = values.map(item => /^([^\d:：()（）]{1,80}?)(?:为|[:：])?(?:人民币)?(\d+(?:\.\d+)?)元?$/.exec(item));
   if (rows.some(row => !row)) return null;
   return rows.map(row => ({ name: row![1]!, amount: row![2]! }));
 }
@@ -48,7 +48,7 @@ function contains(rows: ReturnType<typeof components>, name: string, amount: str
 }
 
 type BoundFee = { value: boolean; amounts: string[]; base?: string; total?: string };
-const statedTotal = '(?:每月|每期)(?:还款总额|应还总额|应还合计|合计应付|还款额|还款合计)(?:为|[:：])?(?:人民币)?' + num + '元';
+const statedTotal = '(?:每月|每期)(?:还款总额|应还总额|应还合计|合计应付|还款额|还款合计|应还|还款)(?:为|[:：])?(?:人民币)?' + num + '元';
 const breakdown = new RegExp(statedTotal + '(?:\\(其中|,其中):?([^。;；)]+?)(?=[)。;；]|$)', 'g');
 
 function boundFee(facts: CaseFacts, fee: CaseFacts['fees'][number], quote: string): BoundFee | undefined {
@@ -63,6 +63,25 @@ function boundFee(facts: CaseFacts, fee: CaseFacts['fees'][number], quote: strin
         sumFits([fee.amount], loan.principal, loan.disbursed, true)) return { value: true, amounts: [fee.amount] };
   }
   if (fee.timing !== 'per_period' || facts.repayments.length || loan.repay_method !== 'equal_installment' || loan.period_payment === null) return;
+  // A table or clause can state the total with the fee inside parentheses:
+  // "每期还款人民币1120元（含每期服务费120元）". The named amount must match,
+  // the total must equal the selected payment, and the fee must fit inside it.
+  const inclusive = new RegExp(total + '(?:[（(])(?:其中|内含)?(?:已)?(?:包含|包括|含)' +
+    '(?:每期|每月)?' + escape(name) + num + '元[）)]', 'g');
+  for (const match of quote.matchAll(inclusive)) {
+    if (eq(match[1]!, loan.period_payment) && eq(match[2]!, fee.amount) &&
+        sumFits([fee.amount], loan.period_payment)) return { value: true, amounts: [fee.amount], total: match[1] };
+  }
+  // A schedule note can decompose the payment with an equation:
+  // "每期还款1120元=本金1000元+服务费120元". Every named component must parse,
+  // the sum must equal both the stated total and the selected payment exactly.
+  const equation = new RegExp(total + '[=＝]([^。;；)）]+)', 'g');
+  for (const match of quote.matchAll(equation)) {
+    const rows = components(match[2]!.replace(/\+/g, '、'));
+    if (!rows || rows.filter(row => row.name === name).length !== 1 || !contains(rows, name, fee.amount)) continue;
+    if (!sumFits(rows.map(row => row.amount), match[1]!, '0', true)) continue;
+    if (eq(match[1]!, loan.period_payment)) return { value: true, amounts: rows.map(row => row.amount), total: match[1] };
+  }
   for (const match of quote.matchAll(breakdown)) {
     const content = match[2]!.replace(/(?:^|[+、,])(?:每期|每月)(?:偿还|支付|应还)?/g, separator => separator.replace(/[^+、,]/g, ''));
     const rows = components(content.replace(/\+/g, '、'));
@@ -114,11 +133,16 @@ export function addFeeBreakdownEvidence(output: CaseExtraction, materials: Sourc
     const field = `fees[${index}].included_in_cashflows`;
     const seen = new Set(output.evidence.filter(item => path(item.field) === field).map(item => clean(item.quote)));
     for (const material of materials) for (const page of material.pages) {
-      const lines = page.text.split('\n');
-      for (let n = 0; n < lines.length; n++) {
-        if (!/每期|每月|放款/.test(lines[n]!)) continue;
-        for (let length = 1; length <= 3; length++) {
-          const quote = lines.slice(n, n + length).join('\n').trim();
+      const raw = page.text.split('\n');
+      const labelOnly = /^[\s*【】\[\]]*(?:每期|每月)(?:还款|应还)(?:总额|合计|额)?\s*[:：]?\s*$/;
+      for (let n = 0; n < raw.length; n++) {
+        if (!/每期|每月|放款/.test(raw[n]!)) continue;
+        // PDF tables put a row label and its value on separate lines. A
+        // standalone label may borrow the following value line so the joined
+        // span itself is the exact source quote; windows never cross it twice.
+        const borrow = labelOnly.test(raw[n]!) && n + 1 < raw.length && /\d/.test(raw[n + 1]!) ? 1 : 0;
+        for (let length = 1 + borrow; length <= 3 + borrow; length++) {
+          const quote = raw.slice(n, n + length).join('\n').trim();
           const compact = clean(quote);
           if (quote.length > 600 || !boundFee(output.facts, fee, compact)) continue;
           if (!seen.has(compact)) {
@@ -214,7 +238,10 @@ export function inferFeePrefills(facts: CaseFacts, evidence: Evidence[], conflic
     const prefix = `fees[${oldIndex}]`, affected = [prefix, 'loan', 'repayments'];
     if (conflicts.some(c => affected.some(a => path(c.field) === a || path(c.field).startsWith(a + '.') || path(c.field).startsWith(a + '[') || a.startsWith(path(c.field) + '[')))) continue;
     const loanFields = fee.timing === 'upfront' ? ['loan.disbursed', 'loan.principal'] : ['loan.period_payment'];
-    const relevant = evidence.filter(e => path(e.field).startsWith(prefix + '.') ||
+    // Contingent-cost disclosure statements ("不含逾期罚息等或有成本") concern
+    // other charges, not this confirmed normal fee's inclusion; they must not
+    // veto its verified bindings.
+    const relevant = evidence.filter(e => (path(e.field).startsWith(prefix + '.') && path(e.field) !== prefix + '.contingent') ||
       (loanFields.includes(path(e.field)) && clean(e.quote).includes(name)));
     if (!relevant.length || relevant.some(e => unsafe.test(clean(e.quote)))) continue;
     const positive: { e: Evidence; amounts: string[] }[] = [], negative: Evidence[] = [];

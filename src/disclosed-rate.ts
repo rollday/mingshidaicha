@@ -4,7 +4,7 @@ type Method = CaseFacts['disclosure']['quoted_method'];
 type Rate = { value: string; method: Method; quote: string };
 type RateSource = Rate & { material: SourceMaterial; page: number };
 
-const annualTotal = /^(?:借款)?(?:年化综合(?:融资|资金)成本(?:率)?|综合(?:融资|资金)成本\s*(?:[（(]?年化(?:利率)?[）)]?|率)|(?:明示|披露)(?:综合融资成本)?年化(?:利率)?)\s*[:：]?\s*(?:\((名义|复利|单利|XIRR)\)\s*)?(\d{1,6}(?:\.\d{1,18})?)\s*%(.*)$/i;
+const annualTotal = /^(?:借款)?(?:正常履约)?(?:年化综合(?:融资|资金)成本(?:率)?|综合(?:融资|资金)成本\s*(?:[（(]?年化(?:利率)?[）)]?|率)|(?:明示|披露)(?:综合融资成本)?年化(?:利率)?)\s*[:：]?\s*(?:\((名义|复利|单利|XIRR)\)\s*)?(\d{1,6}(?:\.\d{1,18})?)\s*%(.*)$/i;
 const englishTotal = /^disclosed\s+(?:(nominal|effective|simple|xirr)\s+)?annual\s+total\s+financing\s+cost\s*:\s*(\d{1,6}(?:\.\d{1,18})?)\s*%(.*)$/i;
 const annual = /^(?:贷款利息\s*)?年化(?:利率)?\s*[:：]?\s*(?:\((名义|复利|单利|XIRR)\)\s*)?(\d{1,6}(?:\.\d{1,18})?)\s*%(.*)$/i;
 const tableTitle = /^\s*(?:个人(?:消费)?贷款)?综合(?:融资|资金)成本明示表\s*$/m;
@@ -36,7 +36,8 @@ function parseRate(quote: string, patterns: RegExp[]): Rate | null {
   const match = patterns.map(pattern => clean.match(pattern)).find(Boolean);
   if (!match) return null;
   const [, before = '', percent = '', trailing = ''] = match;
-  const after = trailing.match(/^\s*[,、(]?\s*(?:按)?(名义|复利|有效年化|单利|XIRR|按实际日期年化)/i)?.[1] ?? '';
+  const after = trailing.match(/^\s*[,、(（]?\s*(?:按)?(名义|复利|有效年化|单利|XIRR|按实际日期年化)/i)?.[1]
+    ?? trailing.match(/^\s*[（(][^）)]*[,，、;；]\s*(名义|复利|有效年化|单利|XIRR)(?:口径|计息|年化)?[^）)]*[）)]/i)?.[1] ?? '';
   const stated = canonicalMethod(before || after);
   const monthly = trailing.match(/^\s*\(\s*月利率\s*[:：]?\s*(\d{1,6}(?:\.\d{1,18})?)\s*%\s*\)/)?.[1];
   const [whole, fraction = ''] = percent.split('.');
@@ -50,14 +51,34 @@ function parseRate(quote: string, patterns: RegExp[]): Rate | null {
   };
 }
 
+// PDF tables split a label and its value across lines. Join a standalone rate
+// line to the label line above it, keeping the exact source span as the quote.
+function rateLines(pageText: string): { text: string; start: number }[] {
+  const lines = pageText.split('\n').map(line => line.replace(/\r$/, ''));
+  const starts: number[] = [];
+  let offset = 0;
+  for (const line of lines) { starts.push(offset); offset += line.length + 1; }
+  const labelOnly = /^[\s*【】\[】]*(?:借款)?(?:正常履约)?(?:年化综合(?:融资|资金)成本(?:率)?|综合(?:融资|资金)成本\s*(?:[（(]?年化(?:利率)?[）)]?|率)|(?:明示|披露)(?:综合融资成本)?年化(?:利率)?)\s*[:：]?\s*$/i;
+  const rateLine = /^\s*\d{1,6}(?:\.\d{1,18})?\s*%/;
+  const out: { text: string; start: number }[] = [];
+  for (let index = 0; index < lines.length; index++) {
+    const line = lines[index]!;
+    out.push({ text: line, start: starts[index]! });
+    if (index + 1 < lines.length && labelOnly.test(line.normalize('NFKC')) && rateLine.test(lines[index + 1]!)) {
+      out.push({ text: line + '\n' + lines[index + 1], start: starts[index]! });
+    }
+  }
+  return out;
+}
+
 /** Use source lines for an aggregate APR and its method, even if the model omitted them. */
 export function groundDisclosedRate(extraction: CaseExtraction, materials: SourceMaterial[]): void {
   const totals: RateSource[] = [], interestOnly: RateSource[] = [];
   const potentialNormalFees = extraction.facts.fees.some(fee => fee.contingent !== true && !/^0+(?:\.0+)?$/.test(fee.amount ?? ''));
   for (const material of materials) {
     for (const page of material.pages) {
-      for (const line of page.text.split(/\r?\n/)) {
-        const total = parseRate(line, [annualTotal, englishTotal]);
+      for (const line of rateLines(page.text)) {
+        const total = parseRate(line.text, [annualTotal, englishTotal]);
         if (total) totals.push({ ...total, material, page: page.page });
       }
       if (potentialNormalFees || !tableTitle.test(page.text)) continue;

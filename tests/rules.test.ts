@@ -192,3 +192,23 @@ test('ordinary zero down-payment wording is not a marketing risk hit', () => {
   const facts={...baseFacts,marketing_phrases:['无抵押、秒到账，0首付购买课程']};
   assert.equal(byId(run(facts),'R09').status,'not_triggered');
 });
+
+test('R02 surfaces the disclosure-label mismatch clue when the stated convention cannot be recomputed', async () => {
+  const { evaluateRules } = await import('../src/rules.ts');
+  const { caseFactsSchema } = await import('../src/domain.ts');
+  const facts = caseFactsSchema.parse({
+    loan: { principal: '24000', disbursed: '24000', term_periods: 24, periods_per_year: 12,
+      repay_method: 'equal_installment', period_payment: '1120', nominal_apr: '0', start_date: '2026-12-01' },
+    fees: [{ id: 'f1', name: '服务费', amount: '120', timing: 'per_period', contingent: false, included_in_cashflows: true, in_disclosure: true }],
+    disclosure: { present: true, quoted_apr: '0.1171', quoted_method: 'simple', items_complete: true },
+  });
+  const calculation: any = { calculation: { nominal_apr: '0.1112666', effective_apr: '0.1171200', simple_apr: null, xirr_apr: null,
+    comparison: { method: 'simple', method_basis: 'explicit', disclosed_method: 'simple', status: 'unavailable',
+      unavailable_reason: 'unsupported_cashflow_for_method', quoted_apr: '0.1171', computed_apr: null, gap_pp: null, exceeds_tolerance: null } } };
+  const rules = evaluateRules(facts, calculation, [], { as_of: '2026-11-23' });
+  const r02 = rules.find(rule => rule.rule_id === 'R02')!;
+  assert.equal(r02.status, 'insufficient_data');
+  assert.match(r02.reason, /披露口径标注与可重算口径不一致/);
+  assert.match(r02.reason, /名义年化、复利年化/);
+  assert.match(r02.reason, /不能据此直接认定利率标错/);
+});

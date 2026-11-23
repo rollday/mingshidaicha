@@ -94,3 +94,30 @@ test('AI may explicitly negate an assumed simple-rate comparison', async () => {
   assert.equal(report.generation.mode,'ai');
   assert.match(report.conclusion.summary,/名义年化口径比较/);
 });
+
+test('table-split aggregate APR lines are grounded with their exact two-line quote', async () => {
+  const text = '附件二 综合融资成本明示表\n正常履约年化综合融资成本\n11.71%（按现金流年化，单利口径）\n提前还款\n不减免已发生的服务费';
+  const model = new CaseModel({ ...config, apiKey: undefined });
+  model.json = async () => ({ facts: caseFactsSchema.parse({}), evidence: [], questions: [], conflicts: [] });
+  const result = await model.extract([{ id: 'd', role: 'contract', pages: [{ page: 3, text }] }], undefined, new AbortController().signal, () => {});
+  assert.equal(result.facts.disclosure.quoted_apr, '0.1171');
+  assert.equal(result.facts.disclosure.quoted_method, 'simple');
+  const quote = result.evidence.find(e => e.field === 'disclosure.quoted_apr');
+  assert(quote);
+  assert.equal(quote!.quote, '正常履约年化综合融资成本\n11.71%（按现金流年化，单利口径）');
+  assert(text.includes(quote!.quote));
+});
+
+test('parenthesised method qualifiers after a comma are recognised without inventing labels', async () => {
+  const model = new CaseModel({ ...config, apiKey: undefined });
+  model.json = async () => ({ facts: caseFactsSchema.parse({}), evidence: [], questions: [], conflicts: [] });
+  for (const [line, method] of [
+    ['年化综合融资成本：8.00%（按现金流年化，复利口径）', 'effective'],
+    ['年化综合融资成本 7.2%（XIRR，按实际日期）', 'xirr'],
+    ['年化综合融资成本 12%（其中包含担保费）', 'unknown'],
+    ['年化综合融资成本 8%（按月复利年化）', 'unknown'],
+  ] as const) {
+    const result = await model.extract([{ id: 'd', role: 'contract', pages: [{ page: 1, text: line }] }], undefined, new AbortController().signal, () => {});
+    assert.equal(result.facts.disclosure.quoted_method, method, line);
+  }
+});

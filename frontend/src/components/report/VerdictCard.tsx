@@ -1,5 +1,5 @@
 import type { AuditReport } from '../../types/audit.ts';
-import { comparisonStatus, unavailableComparisonLabels } from '../../../../shared/apr-comparison.ts';
+import { comparisonStatus, unavailableComparisonLabels, unsupportedDisclosureHint } from '../../../../shared/apr-comparison.ts';
 import { decimal, methodNames, money, percent } from '../../lib/format.ts';
 import { Card, Tag, type Tone } from '../base/index.tsx';
 
@@ -57,6 +57,14 @@ export function VerdictCard({ report }: { report: AuditReport }) {
           </p>
         ) : rates ? (
           <p className="text-2xs text-mute">未完成同口径比较。{reason ? unavailableComparisonLabels[reason] : '缺少完整比较结果'}。</p>
+        ) : null}
+        {comparison && rates && unsupportedDisclosureHint({ ...comparison, nominal_apr: rates.nominal_apr, effective_apr: rates.effective_apr, xirr_apr: rates.xirr_apr }) ? (
+          <p className="text-sm text-amber">披露口径标注可能有误：按所标口径无法重算，但
+            {rates.nominal_apr != null ? `名义年化约 ${percent(rates.nominal_apr)}` : ''}
+            {rates.nominal_apr != null && rates.effective_apr != null ? '、' : ''}
+            {rates.effective_apr != null ? `复利年化约 ${percent(rates.effective_apr)}` : ''}
+            {rates.xirr_apr != null ? `按实际日期年化约 ${percent(rates.xirr_apr)}` : ''}
+            可以重算。披露数值可能对应其中另一种口径，请核对标注；这不是利率标错的认定。</p>
         ) : null}
         {!report.calculation ? <p className="text-sm text-mute">借款成本与重算年化暂不可用。</p> : null}
         {confirmedSeparateUndisclosedFees.length ? (

@@ -246,3 +246,52 @@ test('A1 requires affirmative ordinary-loan semantics and rejects inclusion hidd
     assert.deepEqual(inferFeePrefills(make(),[...annuity(),evidence('fees[3].amount',quote)],[]),[],quote);
   }
 });
+
+test('parenthesised inclusion and equation schedule notes bind the named per-period fee', () => {
+  const facts = caseFactsSchema.parse({
+    loan: { principal: '24000', disbursed: '24000', term_periods: 24, periods_per_year: 12,
+      repay_method: 'equal_installment', period_payment: '1120', nominal_apr: '0' },
+    fees: [{ id: 'f1', name: '服务费', amount: '120', timing: 'per_period', contingent: false }],
+  });
+  for (const text of [
+    '每期还款\n人民币 1,120.00 元（含每期服务费 120.00 元）',
+    '说明：每期还款 1,120.00 元 = 本金 1,000.00 元 + 服务费 120.00 元；本合同不收取贷款利息。',
+    '每期还款额\n1,120.00 元（含服务费 120.00 元）',
+  ]) {
+    const output = { facts: structuredClone(facts), evidence: [] as Evidence[], questions: [], conflicts: [] };
+    addFeeBreakdownEvidence(output as never, [{ id: 'doc', role: 'contract', pages: [{ page: 1, text }] }]);
+    const result = inferFeePrefills(output.facts, output.evidence, []);
+    assert(result.length > 0, text);
+    assert.equal(result[0]!.value, true, text);
+    assert.equal(result[0]!.treatment, 'in_period_payment', text);
+    assert(output.evidence.every(e => text.includes(e.quote)), text);
+  }
+});
+
+test('a fee outside the stated payment is never inferred as included by the new bindings', () => {
+  const facts = caseFactsSchema.parse({
+    loan: { principal: '24000', disbursed: '24000', term_periods: 24, periods_per_year: 12,
+      repay_method: 'equal_installment', period_payment: '1000', nominal_apr: '0' },
+    fees: [{ id: 'f1', name: '服务费', amount: '120', timing: 'per_period', contingent: false }],
+  });
+  const output = { facts, evidence: [] as Evidence[], questions: [], conflicts: [] };
+  addFeeBreakdownEvidence(output as never, [{ id: 'doc', role: 'contract', pages: [{ page: 1, text: '每期还款 1,000.00 元；另收服务费 120.00 元。' }] }]);
+  assert.deepEqual(inferFeePrefills(output.facts, output.evidence, []).filter(r => r.value), []);
+});
+
+test('contingent-cost disclosure notes about other charges do not veto a verified normal-fee inclusion', () => {
+  const facts = caseFactsSchema.parse({
+    loan: { principal: '24000', disbursed: '24000', term_periods: 24, periods_per_year: 12,
+      repay_method: 'equal_installment', period_payment: '1120', nominal_apr: '0' },
+    fees: [{ id: 'f1', name: '服务费', amount: '120', timing: 'per_period', contingent: false }],
+  });
+  const evidence = [
+    { id: 'a', field: 'fees[0].included_in_cashflows', document_id: 'doc', page: 1,
+      quote: '每期还款 1,120.00 元（含每期服务费 120.00 元）' },
+    { id: 'b', field: 'fees[0].contingent', document_id: 'doc', page: 3,
+      quote: '本表仅列示正常履约情形下的本金与费用，不含逾期罚息、挪用罚息等或有成本；' },
+  ] as Evidence[];
+  const result = inferFeePrefills(facts, evidence, []);
+  assert.equal(result[0]?.value, true);
+  assert(!result[0]?.evidence_ids.includes('b'));
+});

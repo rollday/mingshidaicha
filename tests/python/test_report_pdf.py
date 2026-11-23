@@ -201,3 +201,22 @@ class ReportPdfTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+    def test_missing_fields_message_is_chinese_and_fee_total_has_arithmetic_fallback(self):
+        payload = sample_payload()
+        report = payload["report"]
+        report["calculation"] = None
+        report["calculation_error"] = {"code": "MISSING_FIELDS",
+                                       "message": "缺少完成核算所需的已确认字段，请补充或核对后重新计算。"}
+        report["facts"]["loan"]["term_periods"] = 24
+        report["facts"]["fees"] = [{"id": "f1", "name": "服务费", "amount": "120", "timing": "per_period",
+                                    "contingent": False, "payee": "某机构", "payee_type": "lender",
+                                    "in_disclosure": True, "included_in_cashflows": None,
+                                    "included_in_disclosed_cost": True}]
+        document = fitz.open(stream=create_report_pdf(payload), filetype="pdf")
+        text = "\n".join(page.get_text() for page in document)
+        document.close()
+        self.assertNotIn("Required confirmed loan fields are missing", text)
+        self.assertIn("缺少完成核算所需的已确认字段", text)
+        self.assertIn("2,880.00", text)
+        self.assertIn("未完成对账", text)

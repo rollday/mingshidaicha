@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import type { CaseFacts, Evidence, LoanResult, RuleResult } from './domain.ts';
 import {defaultRuleLevel,gradeRule,type RuleNature} from '../shared/rule-policy.ts';
-import { comparisonStatus, unavailableComparisonLabels } from '../shared/apr-comparison.ts';
+import { comparisonStatus, unavailableComparisonLabels, unsupportedDisclosureHint } from '../shared/apr-comparison.ts';
 
 type Citation = NonNullable<RuleResult['citation']>;
 type RuleDefinition = {
@@ -133,8 +133,14 @@ export function evaluateRules(
     ? '同口径自算值与标注值的差异超过本项目设置的容差；该阈值不是违法认定标准。'
       : exceeds === false
         ? '同口径重算值与披露值的差异未超过本项目设置的容差。'
-        : comparison?.unavailable_reason ? unavailableComparisonLabels[comparison.unavailable_reason] + '，暂不能判断差异。'
-          : '缺少完整的同口径比较结果，暂不能判断差异。',
+        : (() => {
+          const hint = comparison && resultValue ? unsupportedDisclosureHint({ ...comparison,
+            nominal_apr: resultValue.calculation.nominal_apr, effective_apr: resultValue.calculation.effective_apr,
+            xirr_apr: resultValue.calculation.xirr_apr }) : null;
+          if (hint) return hint;
+          return comparison?.unavailable_reason ? unavailableComparisonLabels[comparison.unavailable_reason] + '，暂不能判断差异。'
+            : '缺少完整的同口径比较结果，暂不能判断差异。';
+        })(),
     '核实实际到账和还款安排，并明确明示表采用的年化口径。');
 
   const normalFees = facts.fees.filter((fee) => fee.contingent === false);

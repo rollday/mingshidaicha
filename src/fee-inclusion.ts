@@ -6,7 +6,7 @@ const compact = (value: string) => value.normalize('NFKC').replace(/\s/g, '')
 const escape = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 const numeric = '(\\d+(?:\\.\\d+)?)';
 const moneyEnd = '(?:元|人民币|(?=[，,、；;。()（）]|$))';
-const recurringTotal = '(?:每期|每月)(?:还款总额|还款合计|应还总额|应还合计|扣款总额|还款额)(?:为|[:：])?' + numeric + moneyEnd;
+const recurringTotal = '(?:每期|每月)(?:还款总额|还款合计|应还总额|应还合计|扣款总额|还款额|应还|还款)(?:为|[:：])?(?:人民币)?' + numeric + moneyEnd;
 const netReceipt = '(?:实际到账(?:净额)?|到账净额|实收净额)(?:为|[:：])?' + numeric + moneyEnd;
 
 // All comparisons use decimal integers, including sub-cent source amounts.
@@ -40,7 +40,7 @@ function namedAmount(text: string, name: string, amount: string): boolean {
 
 function supportsRecurring(quote: string, name: string, amount: string, payment: string): boolean {
   const total = recurringTotal;
-  const forward = new RegExp(total + '(?:[，,（(])?(?:其中)?(?:已)?(?:包含|包括|含)([^。；;]+)', 'g');
+  const forward = new RegExp(total + '(?:[，,（(])?(?:其中|内含)?(?:已)?(?:包含|包括|含)(?:每期|每月)?([^。；;]+)', 'g');
   if ([...quote.matchAll(forward)].some(match => equal(match[1]!, payment) && namedAmount(match[2]!, name, amount))) return true;
   const reverse = new RegExp('(?:^|[，,。；;])' + escape(name) + '(?:为|[:：])?' + numeric
     + '元(?:已)?(?:包含|包括|计入|纳入)在?' + total + '(?:中|内)', 'g');
