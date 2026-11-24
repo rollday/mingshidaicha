@@ -198,10 +198,6 @@ class ReportPdfTests(unittest.TestCase):
             self.assertIn("对应依据：R02", page.split(marker, 1)[1])
         document.close()
 
-
-if __name__ == "__main__":
-    unittest.main()
-
     def test_missing_fields_message_is_chinese_and_fee_total_has_arithmetic_fallback(self):
         payload = sample_payload()
         report = payload["report"]
@@ -220,3 +216,7 @@ if __name__ == "__main__":
         self.assertIn("缺少完成核算所需的已确认字段", text)
         self.assertIn("2,880.00", text)
         self.assertIn("未完成对账", text)
+
+
+if __name__ == "__main__":
+    unittest.main()

@@ -331,10 +331,6 @@ class LoanPlanTests(unittest.TestCase):
                                       period_payment="34", nominal_apr=None))
         self.assertEqual([row["amount"] for row in result["input"]["repayments"]], ["34", "34", "34"])
 
-
-if __name__ == "__main__":
-    unittest.main()
-
     def test_mock_contract_zero_interest_service_fee_reconciles(self):
         # 2026-11-23 mock contract: 24000 principal, 24 x 1120 (1000 + 120 fee),
         # 0% interest. Effective APR ~11.712%, nominal ~11.1267%; the disclosed
@@ -359,3 +355,7 @@ if __name__ == "__main__":
             calculate_loan(facts(disbursed=None))
         self.assertEqual(caught.exception.code, "MISSING_FIELDS")
         self.assertIn("缺少完成核算所需的已确认字段", caught.exception.message)
+
+
+if __name__ == "__main__":
+    unittest.main()
