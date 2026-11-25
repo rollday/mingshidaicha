@@ -15,7 +15,7 @@ export function SummaryCard({ report, embedded = false }: { report: AuditReport;
     return (
       <div className="rounded-md border border-blue/20 bg-blue/5 px-4 py-3">
         <div className="flex flex-wrap items-center gap-2 text-xs font-medium text-blue"><span>{label}</span>{modeTag}</div>
-        <p className="mt-2 whitespace-pre-wrap text-sm leading-relaxed text-ink-soft">{summaryText}</p>
+        <p className="mt-2 whitespace-pre-wrap break-words text-sm leading-relaxed text-ink-soft">{summaryText}</p>
         <p className="mt-2 text-2xs text-mute">原文保留 · 报告生成时的概要</p>
         {fallbackNote}
       </div>
@@ -30,7 +30,7 @@ export function SummaryCard({ report, embedded = false }: { report: AuditReport;
           <h2 id="report-summary-heading" className="font-serif text-lg font-medium">{label}</h2>
           {modeTag}
         </header>
-        <p className="whitespace-pre-wrap text-base leading-relaxed text-ink">{summaryText}</p>
+        <p className="whitespace-pre-wrap break-words text-base leading-relaxed text-ink">{summaryText}</p>
         {calculation ? (
           <div className="rounded-md border border-blue/20 bg-blue/5 px-3 py-3">
             <p className="text-sm leading-relaxed">按当前材料预计，你一共要还 <strong className="num text-base">{money(calculation.total_payment)}</strong>。</p>
