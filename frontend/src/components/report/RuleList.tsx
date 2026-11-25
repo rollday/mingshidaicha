@@ -238,6 +238,7 @@ function actionsFor(rule: RuleResult, report: AuditReport): string[] {
 function issueHeadline(rule: RuleResult, report: AuditReport) {
   const comparison = report.calculation?.calculation.comparison;
   const undisclosed = report.facts.fees.filter((fee) => fee.contingent === false && fee.in_disclosure === false);
+  if (rule.status !== 'triggered') return rule.title;
   if (rule.rule_id === 'R02' && comparison?.quoted_apr != null && comparison.computed_apr != null) {
     return <>按实际支出算，年化是 <mark className="hl-red">{percent(comparison.computed_apr)}</mark>，不是 {percent(comparison.quoted_apr)}</>;
   }
@@ -254,25 +255,30 @@ function issueHeadline(rule: RuleResult, report: AuditReport) {
   return rule.title;
 }
 
+/** 问法只在数据支持时才陈述事实；信息不足时改为不预设结论的索取。 */
 function askFor(rule: RuleResult, report: AuditReport): string {
+  const triggered = rule.status === 'triggered';
   const comparison = report.calculation?.calculation.comparison;
   const undisclosed = report.facts.fees.filter((fee) => fee.contingent === false && fee.in_disclosure === false);
-  const fee = undisclosed[0];
+  const fee = undisclosed.find((item) => item.amount !== null) ?? undisclosed[0];
   const perPeriodFee = undisclosed.find((item) => item.timing === 'per_period' && item.amount !== null);
   const quoted = comparison?.quoted_apr ?? report.facts.disclosure.quoted_apr;
+  const feeText = (item: typeof fee, per: string) => item ? `${item.amount === null ? '' : `${moneyPlain(item.amount)} 元`}${item.name}${item.amount === null ? '' : ` ${per}`}`.trim() : '';
   switch (rule.rule_id) {
     case 'R01':
       return '请提供完整的综合融资成本明示表和逐期还款计划，注明每期本金、利息、各项费用及其收取主体。';
     case 'R02':
-      return `请问明示表上的${quoted == null ? '年化' : ` ${percent(quoted)}`} 是按什么方式计算的？${perPeriodFee ? `如果把每期 ${moneyPlain(perPeriodFee.amount)} 元${perPeriodFee.name}一起算进去，年化是多少？` : '如果把这些费用一起算进去，年化是多少？'}请书面回复。`;
+      if (!triggered || quoted === null) return '请说明明示表上的年化是按什么方式计算的，以及各项费用是否计入这个数字。';
+      return `请问明示表上的 ${percent(quoted)} 是按什么方式计算的？${perPeriodFee ? `如果把每期 ${moneyPlain(perPeriodFee.amount)} 元${perPeriodFee.name}一起算进去，年化是多少？` : '如果把各项费用一起算进去，年化是多少？'}请书面回复。`;
     case 'R03':
-      return `明示表上只写了利息，合同里${fee ? `每期还有 ${moneyPlain(fee.amount)} 元${fee.name}` : '还有其他费用'}。请提供这笔钱的收取依据和明细，并说明为什么没有写进明示表、是否计入了年化。`;
+      if (!triggered || !fee) return '请提供综合融资成本明示表，并列明利息、分期费及其他正常履约费用各自的收取方式、标准和收取主体。';
+      return `明示表上没有列出${feeText(fee, '/ 期')}。请提供这笔钱的收取依据和明细，并说明为什么没有写进明示表、是否计入了年化。`;
     case 'R04':
-      return `合同里的${fee?.name ?? '这笔费用'}是否计入年化？请提供包含这项费用的逐期还款计划和综合融资成本明细。`;
+      return fee ? `合同里的${fee.name}是否计入年化？请提供包含这项费用的逐期还款计划和综合融资成本明细。` : '合同里是否有担保、保险等增信费用？如有，请说明是否计入明示年化。';
     case 'R05':
-      return '这项费用由平台直接收取，依据是什么？请提供平台与贷款人的合作及收费说明，并确认是否计入明示年化。';
+      return triggered ? '这项费用由平台直接收取，依据是什么？请提供平台与贷款人的合作及收费说明，并确认是否计入明示年化。' : '请说明这笔贷款是否有合作平台参与收费；如有，请提供收费依据及是否计入明示年化。';
     case 'R06':
-      return '请说明这笔贷款为什么向在校学生发放，并书面确认额度、期限和用途是否符合学生贷款的相关要求。';
+      return triggered ? '请说明这笔贷款为什么向在校学生发放，并书面确认额度、期限和用途是否符合学生贷款的相关要求。' : '请书面确认借款人是否为在校学生，以及这笔贷款的额度、期限和用途。';
     case 'R07':
       return '请提供放贷方的金融许可证编号和监管登记信息，以便核对资质。';
     case 'R08':
@@ -280,7 +286,7 @@ function askFor(rule: RuleResult, report: AuditReport): string {
     case 'R09':
       return '请提供原始营销页面或宣传材料的完整截图和链接，说明其中的利率、额度、到账时间等表述。';
     case 'R10':
-      return '请说明这笔费用在什么条件下发生、金额如何计算，以及为什么没有在明示表中单独列出。';
+      return triggered ? '请说明这笔费用在什么条件下发生、金额如何计算，以及为什么没有在明示表中单独列出。' : '合同中是否有逾期、提前还款等条件下才收取的费用？如有，请提供收取标准和计算方式。';
     default:
       return rule.action.trim() || '请提供这项收费的合同条款、收取依据和书面说明。';
   }

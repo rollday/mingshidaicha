@@ -59,10 +59,25 @@ export function FeeTable({ report }: { report: AuditReport }) {
   const contingent = report.facts.fees.filter((fee) => fee.contingent === true);
   const unconfirmedAccounting = regular.filter((fee) => fee.included_in_cashflows === null);
   const summary = report.calculation?.summary;
-  const principal = summary?.principal ?? loan.disbursed ?? loan.principal;
-  const interest = summary ? decimalSub(summary.total_repayment, principal) : null;
+  const ledger = report.calculation?.fee_ledger ?? [];
+  // 口径对齐 python/loan_plan.py：total_repayment 是还款计划合计，已含「并入还款额」的费用；
+  // 利息 = 还款计划合计 − 本金 − 并入还款额的费用。
+  const includedInRepayment = ledger.length
+    ? ledger.filter((item) => item.category === 'included_in_repayment').map((item) => item.total)
+    : report.facts.fees
+      .filter((fee) => fee.contingent === false && fee.included_in_cashflows === true && fee.timing !== 'upfront' && !(fee.timing === 'specific_period' && fee.period === 0))
+      .map((fee) => feeTotalOf(fee, totals, termPeriods))
+      .filter((total): total is string => total !== null);
+  const deductedFromDisbursement = ledger.length
+    ? ledger.filter((item) => item.category === 'deducted_from_disbursement')
+    : [];
+  const interest = summary ? decimalSub(decimalSub(summary.total_repayment, summary.principal), decimalSum(includedInRepayment) ?? '0') : null;
+  const includedTotal = decimalSum(includedInRepayment);
+  const deductedTotal = decimalSum(deductedFromDisbursement.map((item) => item.total));
   const totalPayment = summary?.total_payment ?? null;
+  const received = summary?.disbursed ?? loan.disbursed ?? loan.principal;
   const payment = loan.period_payment ?? report.facts.repayments[0]?.amount ?? null;
+  const paymentLabel = loan.periods_per_year === 12 ? '每月' : '每期';
   const perPeriodFees = report.facts.fees.filter((fee) =>
     fee.timing === 'per_period' && fee.contingent === false && fee.included_in_cashflows === false,
   );
@@ -111,16 +126,16 @@ export function FeeTable({ report }: { report: AuditReport }) {
             <tbody className="max-sm:block">
               <tr className="border-t border-line max-sm:grid max-sm:grid-cols-[1fr_auto] max-sm:items-baseline max-sm:gap-x-3 max-sm:py-3">
                 <td className="py-3 pr-4 align-top max-sm:py-0 max-sm:pr-0">本金（到手）</td>
-                <td className="py-3 pr-4 text-right align-top num whitespace-nowrap max-sm:py-0 max-sm:pr-0">{principal === null ? '—' : money(principal)}</td>
+                <td className="py-3 pr-4 text-right align-top num whitespace-nowrap max-sm:py-0 max-sm:pr-0">{received === null ? '—' : money(received)}</td>
                 <td className="py-3 pr-4 align-top text-ink-soft max-sm:py-0 max-sm:pr-0 max-sm:text-xs max-sm:text-mute">—</td>
-                <td className="py-3 align-top max-sm:py-0 max-sm:text-right"><Tag tone="green">在表内</Tag></td>
+                <td className="py-3 align-top max-sm:py-0 max-sm:text-right">{disclosureTag(report.facts.disclosure.present)}</td>
               </tr>
-              {interest !== null ? (
+              {interest !== null && !interest.startsWith('-') ? (
                 <tr className="border-t border-line max-sm:grid max-sm:grid-cols-[1fr_auto] max-sm:items-baseline max-sm:gap-x-3 max-sm:py-3">
                   <td className="py-3 pr-4 align-top max-sm:py-0 max-sm:pr-0">利息（{termPeriods === null ? '全期' : `${termPeriods} 期`}合计）</td>
                   <td className="py-3 pr-4 text-right align-top num whitespace-nowrap max-sm:py-0 max-sm:pr-0">{money(interest)}</td>
                   <td className="py-3 pr-4 align-top text-ink-soft max-sm:py-0 max-sm:pr-0 max-sm:text-xs max-sm:text-mute">{lenderName}</td>
-                  <td className="py-3 align-top max-sm:py-0 max-sm:text-right"><Tag tone="green">在表内</Tag></td>
+                  <td className="py-3 align-top max-sm:py-0 max-sm:text-right">{disclosureTag(report.facts.disclosure.present)}</td>
                 </tr>
               ) : null}
               {regular.map((fee) => (
@@ -140,11 +155,13 @@ export function FeeTable({ report }: { report: AuditReport }) {
           </table>
           {payment !== null ? (
             <p className="mt-3 text-sm leading-relaxed text-ink-soft">
-              每月还款 <strong className="font-medium num">{money(payment)}</strong>
+              {paymentLabel}还款 <strong className="font-medium num">{money(payment)}</strong>
               {perPeriodFees.length && perPeriodFeeTotal !== null ? <>，另有{perPeriodFees.map((fee) => `${fee.name} ${money(fee.amount)}`).join('、')}，每期实付 <strong className="font-medium num">{money(perPeriodPayment)}</strong></> : null}
               {termPeriods !== null ? <>，共 {termPeriods} 期</> : null}。
             </p>
-          ) : termPeriods !== null ? <p className="mt-3 text-sm text-mute">材料未提供每月还款额；共 {termPeriods} 期。</p> : null}
+          ) : termPeriods !== null ? <p className="mt-3 text-sm text-mute">材料未提供{paymentLabel}还款额；共 {termPeriods} 期。</p> : null}
+          {includedTotal !== null ? <p className="mt-2 text-xs text-mute">其中 {money(includedTotal)}费用已含在每期还款额里，不重复计入；利息已按「还款计划合计 − 本金 − 这部分费用」计算。</p> : null}
+          {deductedTotal !== null ? <p className="mt-2 text-xs text-mute">另有 {money(deductedTotal)}费用在到账时已扣除，所以「到手」少于本金；这部分不在「全期实际支付」里，因为钱没有经过你的手。</p> : null}
         </div>
         {report.calculation_error?.code === 'CALCULATION_INCONSISTENT' ? <p role="alert" className="mt-3 text-sm text-amber">{report.calculation_error.message}</p> : null}
         {report.calculation?.reconciliation && report.calculation.fee_ledger ? <p className="mt-2 text-xs text-mute">已按确认数据核对 {report.calculation.fee_ledger.filter(item => item.category !== 'contingent').length} 项正常费用的计入位置及逐期现金流。</p> : null}
