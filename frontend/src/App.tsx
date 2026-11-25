@@ -20,7 +20,7 @@ function Workflow() {
     Object.keys(state.parsed).length > 0 || state.liveCategories.length > 0 ||
     Boolean(state.draft && ['streaming', 'validating', 'retrying'].includes(state.draft.status));
   useEffect(() => {
-    if (state.screen !== 'report' && /^#(?:rule-|report-actions$|report-rules$)/.test(window.location.hash)) {
+    if (state.screen !== 'report' && /^#(?:rule-|report-rules$)/.test(window.location.hash)) {
       window.history.replaceState(window.history.state, '', window.location.pathname + window.location.search);
     }
     window.scrollTo(0,0);

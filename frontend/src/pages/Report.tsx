@@ -7,7 +7,6 @@ import { FeeTable } from '../components/report/FeeTable.tsx';
 import { Glossary } from '../components/report/Glossary.tsx';
 import { LenderCheck } from '../components/report/LenderCheck.tsx';
 import { RuleList } from '../components/report/RuleList.tsx';
-import { SummaryCard } from '../components/report/SummaryCard.tsx';
 import { VerdictCard } from '../components/report/VerdictCard.tsx';
 
 export default function Report({
@@ -94,7 +93,6 @@ export default function Report({
 
       <div className="flex flex-col gap-6">
         <VerdictCard report={report} />
-        <SummaryCard report={report} />
         <FeeTable report={report} />
         <RuleList report={report} />
         <LenderCheck report={report} busy={busy} onSearch={onSearch} onReadOfficial={onReadOfficial} />
