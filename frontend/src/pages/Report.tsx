@@ -2,12 +2,10 @@ import { useState } from 'react';
 import type { AuditReport } from '../types/audit.ts';
 import { Button } from '../components/base/index.tsx';
 import { money } from '../lib/format.ts';
-import { ActionList } from '../components/report/ActionList.tsx';
 import { CorrectionsNotice } from '../components/report/CorrectionsNotice.tsx';
 import { FeeTable } from '../components/report/FeeTable.tsx';
 import { Glossary } from '../components/report/Glossary.tsx';
 import { LenderCheck } from '../components/report/LenderCheck.tsx';
-import { MonthlyCard } from '../components/report/MonthlyCard.tsx';
 import { RuleList } from '../components/report/RuleList.tsx';
 import { SummaryCard } from '../components/report/SummaryCard.tsx';
 import { VerdictCard } from '../components/report/VerdictCard.tsx';
@@ -63,7 +61,7 @@ export default function Report({
     }
   };
   return (
-    <section className="flex flex-col gap-6 animate-rise">
+    <section className="mx-auto flex w-full max-w-220 animate-rise flex-col gap-6">
       <header className="flex flex-col gap-3 border-b border-line pb-4 sm:flex-row sm:items-end sm:justify-between sm:pb-6">
         <div className="flex min-w-0 flex-col gap-1">
           <Button variant="text" onClick={onBack} disabled={busy} className="w-fit text-sm text-mute hover:text-ink">← 返回修改信息</Button>
@@ -95,11 +93,9 @@ export default function Report({
       {pdfError ? <p className="-mt-5 text-sm text-red" role="alert">{pdfError}</p> : null}
 
       <div className="flex flex-col gap-6">
-        <SummaryCard report={report} />
         <VerdictCard report={report} />
+        <SummaryCard report={report} />
         <FeeTable report={report} />
-        <ActionList report={report} />
-        <MonthlyCard report={report} />
         <RuleList report={report} />
         <LenderCheck report={report} busy={busy} onSearch={onSearch} onReadOfficial={onReadOfficial} />
         <Glossary />
