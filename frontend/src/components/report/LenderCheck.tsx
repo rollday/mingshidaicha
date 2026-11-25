@@ -35,7 +35,7 @@ export function LenderCheck({ report,busy,onSearch,onReadOfficial }: { report: A
   ] as const;
   return (
     <section className="flex flex-col gap-4">
-      <header className="flex flex-col gap-1"><h2 className="text-lg font-medium">放贷方信息</h2><p className="text-sm text-mute">展示用户确认的主体信息与相关属性。</p></header>
+      <header className="flex flex-col gap-1"><h2 className="text-lg font-medium">放贷方信息</h2><p className="text-sm text-mute">展示你确认过的主体信息与相关属性。</p></header>
       <Card padding="wide" className="flex flex-col gap-5">
         <div className="flex flex-wrap items-center gap-3">
           <h3 className="font-serif text-xl font-medium">{lender.name ?? '主体名称待确认'}</h3>

@@ -161,3 +161,33 @@
     }
   }
 }
+
+@layer components {
+  /* 字段值高亮：只包金额/百分比，不包整句；底色走 amber-line / red 的浅档 */
+  .hl {
+    background: linear-gradient(
+      180deg,
+      transparent 58%,
+      color-mix(in srgb, var(--color-amber-line) 30%, transparent) 58%,
+      color-mix(in srgb, var(--color-amber-line) 30%, transparent) 94%,
+      transparent 94%
+    );
+    padding: 0 1px;
+    color: inherit;
+    box-decoration-break: clone;
+    -webkit-box-decoration-break: clone;
+  }
+  .hl-red {
+    background: linear-gradient(
+      180deg,
+      transparent 58%,
+      color-mix(in srgb, var(--color-red) 16%, transparent) 58%,
+      color-mix(in srgb, var(--color-red) 16%, transparent) 94%,
+      transparent 94%
+    );
+    padding: 0 1px;
+    color: var(--color-red);
+    box-decoration-break: clone;
+    -webkit-box-decoration-break: clone;
+  }
+}
