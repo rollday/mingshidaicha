@@ -91,7 +91,7 @@ export function VerdictCard({ report }: { report: AuditReport }) {
               <p className="text-xs text-mute">一共要还</p>
               <p className="mt-1 font-serif text-lg font-semibold leading-tight num"><mark className="hl">{total === null ? '—' : moneyPlain(total)}</mark><span className="ml-1 text-xs font-normal text-mute">元</span></p>
             </div>
-            <div className="rounded-md bg-amber-bg px-4 py-3">
+            <div className="rounded-md bg-amber-bg px-4 py-3 max-sm:col-span-2">
               <p className="text-xs text-amber">表外多收</p>
               <p className="mt-1 font-serif text-lg font-semibold leading-tight num text-amber">{extra === null ? '—' : <mark className="hl">{moneyPlain(extra)}</mark>}<span className="ml-1 text-xs font-normal text-amber">元</span></p>
             </div>
