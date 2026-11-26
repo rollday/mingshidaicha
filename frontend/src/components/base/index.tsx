@@ -166,13 +166,19 @@ const BTN: Record<ButtonVariant, string> = {
   text: "inline p-0 border-0 bg-transparent text-inherit border-b border-dashed border-line-strong cursor-help",
 };
 
+/**
+ * 禁用态是完整的一套类（含几何），不与 BTN 叠加：
+ * 同属性类叠加时由 CSS 输出顺序决定胜负，会丢掉圆角/内边距或让白字落在灰底上。
+ * 几何需与上面的 BTN 保持一致，改尺寸时两处一起改。
+ */
 const BTN_DISABLED: Record<ButtonVariant, string> = {
-  primary: "bg-line text-mute",
-  secondary: "border-line text-mute",
-  sample: "border-line text-mute",
-  chip: "border-line text-mute",
-  seg: "text-mute",
-  text: "",
+  primary: "min-h-12 px-7 rounded-md bg-line text-mute text-base font-medium",
+  secondary: "min-h-11 px-5 rounded-md border border-line bg-surface text-mute text-base",
+  sample:
+    "flex flex-col items-start justify-start gap-0.5 text-left p-4 rounded-md border border-line bg-surface text-mute",
+  chip: "min-h-10 px-4 rounded-full border border-line bg-surface text-mute text-sm",
+  seg: "min-h-9 min-w-18 px-4 rounded-full text-sm text-mute",
+  text: "inline p-0 border-0 bg-transparent text-mute border-b border-dashed border-line-strong cursor-help",
 };
 
 export function Button({
@@ -196,6 +202,12 @@ export function Button({
   const active = !disabled && !loading && variant !== "text" ? "active:scale-[.96]" : "";
   const off = disabled || loading;
 
+  // 选中时 seg 的文字是反白，但底色由 Segmented 的滑块承担，按钮自身必须透明才能露出滑块动画。
+  const pressedClass =
+    variant === "chip"
+      ? "min-h-10 rounded-full border border-ink bg-ink px-4 text-sm font-medium text-surface"
+      : "min-h-9 min-w-18 rounded-full bg-transparent px-4 text-sm font-medium text-surface";
+
   return (
     <button
       type="button"
@@ -205,11 +217,14 @@ export function Button({
       className={[
         "inline-flex cursor-pointer items-center justify-center font-sans",
         "transition-transform duration-300 ease-spring",
-        BTN[variant],
-        off ? `${BTN_DISABLED[variant]} cursor-not-allowed` : active,
-        pressed && (variant === "chip" || variant === "seg")
-          ? "border-ink bg-ink font-medium text-surface"
-          : "",
+        // 互斥分支：不与 BTN[variant] 叠加，避免同属性冲突由 CSS 顺序决定（白底白字的根因）。
+        // 禁用态走独立的完整类，几何与禁用色来自同一处，不会再把圆角/内边距挤掉。
+        off
+          ? BTN_DISABLED[variant]
+          : pressed && (variant === "chip" || variant === "seg")
+            ? pressedClass
+            : BTN[variant],
+        off ? "cursor-not-allowed" : active,
         block ? "w-full" : "",
         className,
       ]
@@ -246,9 +261,10 @@ export function Segmented<T extends string>({
       role="group"
       className={`relative inline-flex rounded-full bg-line p-1 ${className}`}
     >
+      {/* 滑块保留原几何与 ease-thumb 回弹；选中项的文字颜色由 Button 的 pressed 分支接管。 */}
       <span
         aria-hidden="true"
-        className="absolute inset-y-1 left-1 rounded-full bg-surface shadow-thumb transition-transform duration-500 ease-thumb"
+        className="absolute inset-y-1 left-1 rounded-full bg-ink shadow-thumb transition-transform duration-500 ease-thumb"
         style={{ width: `calc(${width}% - 4px)`, transform: `translateX(${index * 100}%)` }}
       />
       {options.map((o) => (
@@ -257,8 +273,9 @@ export function Segmented<T extends string>({
           variant="seg"
           role="radio"
           aria-checked={o.value === value}
+          pressed={o.value === value}
           onClick={() => onChange(o.value)}
-          className={`relative z-10 min-w-18 ${o.value === value ? "font-medium text-ink" : ""}`}
+          className="relative z-10 min-w-18"
         >
           {o.label}
         </Button>
