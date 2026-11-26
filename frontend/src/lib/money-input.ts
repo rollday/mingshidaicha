@@ -23,3 +23,18 @@ export function parsePercentText(text: string): string | null {
 export function percentDraft(value: string | null): string {
   return value === null ? '' : shiftDecimal(value, 2);
 }
+
+
+/** Distinguish an untouched stored value from a visible draft that still needs to be committed. */
+export function moneyDraftStatus(text: string, value: string | null): 'valid' | 'pending' | 'invalid' {
+  if (text.trim() === '') return value === null ? 'valid' : 'pending';
+  const parsed = parseMoneyText(text);
+  if (parsed === null) return 'invalid';
+  return parsed === value ? 'valid' : 'pending';
+}
+export function percentDraftStatus(text: string, value: string | null): 'valid' | 'pending' | 'invalid' {
+  if (text.trim() === '') return value === null ? 'valid' : 'pending';
+  const parsed = parsePercentText(text);
+  if (parsed === null) return 'invalid';
+  return parsed === value ? 'valid' : 'pending';
+}

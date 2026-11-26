@@ -2,7 +2,8 @@ import { useEffect, useState } from 'react';
 import type { CaseFacts, CaseSnapshot } from '../types/audit.ts';
 import { Button, Card, Field, fieldInputClass } from './base/index.tsx';
 import { methodNames, money, percent } from '../lib/format.ts';
-import { parsePercentText, percentDraft } from '../lib/money-input.ts';
+import { parsePercentText, percentDraft, percentDraftStatus } from '../lib/money-input.ts';
+import { useDraftGuard } from '../lib/draft-guard.ts';
 import { MoneyInput } from './KeyFactsCard.tsx';
 
 const roleNames: Record<string, string> = { disclosure: '明示表', contract: '合同', schedule: '还款计划', other: '其他材料' };
@@ -10,8 +11,10 @@ const repayNames: Record<string, string> = { equal_installment: '等额本息', 
 
 export function RateField({ label, value, onChange }: { label: string; value: string | null; onChange: (value: string | null) => void }) {
   const [draft, setDraft] = useState(percentDraft(value));
+  const draftStatus = percentDraftStatus(draft, value);
+  useDraftGuard(label, draftStatus);
   useEffect(() => { setDraft(percentDraft(value)); }, [value]);
-  return <Field suffix="%"><input aria-label={label} inputMode="decimal" className={fieldInputClass} value={draft} placeholder="待确认"
+  return <Field suffix="%"><input aria-label={label} aria-invalid={draftStatus === 'invalid' || undefined} inputMode="decimal" className={fieldInputClass} value={draft} placeholder="待确认"
     onChange={event => setDraft(event.target.value)}
     onBlur={() => { const parsed = parsePercentText(draft); if (parsed !== null) onChange(parsed); else if (draft.trim() === '') onChange(null); }}
     onKeyDown={event => { if (event.key === 'Enter') { const parsed = parsePercentText(draft); if (parsed !== null) onChange(parsed); } }} /></Field>;
@@ -87,7 +90,11 @@ export default function FactsFold({ facts, current, onChange }: { facts: CaseFac
             {editing === row.key ? <div className="sm:col-span-2">{editor(row.key)}</div> : <span className="num font-medium">{display(row.key, facts)}</span>}
             <span className="text-xs text-mute">{editing === row.key ? '' : origin(row.field, current)}</span>
             {editing === row.key
-              ? <div className="flex gap-2"><Button variant="chip" onClick={cancel}>取消</Button><Button variant="chip" onClick={finish}>完成</Button></div>
+              ? <div className="flex gap-2"><Button variant="chip" onClick={cancel}>取消</Button><Button variant="chip" onClick={event => {
+                const invalid = event.currentTarget.parentElement?.parentElement?.querySelector<HTMLInputElement>('input[aria-invalid="true"]');
+                if (invalid) invalid.focus();
+                else finish();
+              }}>完成</Button></div>
               : <Button variant="chip" onClick={() => openRow(row.key)}>改</Button>}
           </div>)}
         </div>

@@ -43,6 +43,7 @@ test('表外且另付只收未披露且未并入还款的正常费用', () => {
   assert.deepEqual(undisclosedIncludedFees([separate, included]).map((item) => item.id), ['f2']);
   assert.equal(undisclosedSeparateTotal([separate, included], new Map([['f1', { total: '960' }]]), 12), '960');
   assert.equal(undisclosedSeparateTotal([included], new Map(), 12), null);
+  assert.equal(undisclosedSeparateTotal([separate, fee({ id: 'f4', amount: null })], new Map(), 12), null);
 });
 
 test('每期实付只在固定每期且金额全已知时成立', () => {
@@ -87,6 +88,11 @@ test('每期实付只在固定每期且金额全已知时成立', () => {
   assert.deepEqual(periodPaymentView(none), {
     kind: 'none', amount: null, label: '每月', note: '材料未提供可展示的每期还款金额。',
   });
+  const varyingSchedule = facts({ repayments: [{ amount: '920', period: 1 }, { amount: '895', period: 2 }] });
+  assert.equal(periodPaymentView(varyingSchedule).kind, 'first');
+  assert.equal(periodPaymentView(varyingSchedule).amount, '920');
+  const fixedSchedule = facts({ repayments: [{ amount: '900.00', period: 1 }] });
+  assert.equal(periodPaymentView(fixedSchedule).kind, 'fixed');
 });
 
 test('到手只认实际到账，合同本金单独保留', () => {
@@ -134,6 +140,7 @@ test('收费周期未知时核算合计不拿单次金额顶替', () => {
 
 test('未披露且已计入的费用按实际计入位置描述', () => {
   assert.equal(includedFeePhrase(fee({ timing: 'upfront', included_in_cashflows: true })), '已经从实际到账里扣掉');
+  assert.equal(includedFeePhrase(fee({ timing: 'specific_period', period: 0, included_in_cashflows: true })), '已经从实际到账里扣掉');
   assert.equal(includedFeePhrase(fee({ timing: 'per_period', included_in_cashflows: true })), '已经并入还款额');
   assert.equal(includedFeePhrase(fee({ timing: 'at_maturity', included_in_cashflows: true })), '已经并入还款额');
 });

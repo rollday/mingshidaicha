@@ -3,7 +3,8 @@ import type { CaseFacts, CaseSnapshot, Evidence } from '../types/audit.ts';
 import type { FeePrefill } from '../../../shared/fee-prefill.ts';
 import { Button, Card, Field, fieldInputClass } from './base/index.tsx';
 import { money, percent } from '../lib/format.ts';
-import { parseMoneyText } from '../lib/money-input.ts';
+import { moneyDraftStatus, parseMoneyText } from '../lib/money-input.ts';
+import { useDraftGuard } from '../lib/draft-guard.ts';
 import { feeVerdict } from '../lib/fee-decision.ts';
 import { feeEvidence } from '../lib/fee-review.ts';
 import { TextInput, TriSelect } from './FieldCard.tsx';
@@ -15,6 +16,8 @@ const roleNames: Record<string, string> = { disclosure: '明示表', contract: '
 
 export function MoneyInput({ label, value, onCommit }: { label: string; value: string | null; onCommit: (value: string | null) => void }) {
   const [draft, setDraft] = useState(value ?? ''), [bad, setBad] = useState(false);
+  const draftStatus = moneyDraftStatus(draft, value);
+  useDraftGuard(label, draftStatus);
   useEffect(() => { setDraft(value ?? ''); setBad(false); }, [value]);
   const commit = (text: string) => {
     if (text.trim() === '') { setBad(false); setDraft(''); onCommit(null); return; }
@@ -23,7 +26,7 @@ export function MoneyInput({ label, value, onCommit }: { label: string; value: s
     setBad(false); onCommit(parsed);
   };
   return <div className="flex flex-col gap-1">
-    <Field suffix="元"><input aria-label={label} inputMode="decimal" className={fieldInputClass} value={draft} placeholder="待填写" onChange={event => setDraft(event.target.value)} onBlur={() => commit(draft)} onKeyDown={event => { if (event.key === 'Enter') commit(draft); }} /></Field>
+    <Field suffix="元"><input aria-label={label} aria-invalid={draftStatus === 'invalid' || undefined} inputMode="decimal" className={fieldInputClass} value={draft} placeholder="待填写" onChange={event => { setDraft(event.target.value); setBad(false); }} onBlur={() => commit(draft)} onKeyDown={event => { if (event.key === 'Enter') commit(draft); }} /></Field>
     {bad && <p role="alert" className="text-xs text-mute">这串数字没读懂，可以写成 10000 或 1万。</p>}
   </div>;
 }

@@ -1,5 +1,5 @@
 import type { AuditReport, CaseFacts, Evidence } from '../types/audit.ts';
-import { decimalSum, money } from './format.ts';
+import { decimalSub, decimalSum, money } from './format.ts';
 import { estimateFeeTotal } from '../../../shared/fee-total.ts';
 
 export type ReportFee = CaseFacts['fees'][number];
@@ -39,7 +39,7 @@ export function feeTotalView(
 
 /** 未披露但已计入的费用，按其实际计入位置描述；放款时收取的是从到账里扣，不是并入还款额。 */
 export function includedFeePlacement(fee: ReportFee): 'disbursement' | 'repayment' {
-  return fee.timing === 'upfront' ? 'disbursement' : 'repayment';
+  return fee.timing === 'upfront' || (fee.timing === 'specific_period' && fee.period === 0) ? 'disbursement' : 'repayment';
 }
 
 export function includedFeePhrase(fee: ReportFee): string {
@@ -60,7 +60,8 @@ export function undisclosedSeparateTotal(
   totals: FeeTotalLookup,
   termPeriods: number | null,
 ): string | null {
-  return decimalSum(undisclosedSeparateFees(fees).map((fee) => feeDisplayTotal(fee, totals, termPeriods)));
+  const amounts = undisclosedSeparateFees(fees).map((fee) => feeDisplayTotal(fee, totals, termPeriods));
+  return amounts.some((amount) => amount === null) ? null : decimalSum(amounts);
 }
 
 /** 只有到账金额才能叫「到手」；合同本金单独展示，不得兜底。 */
@@ -95,7 +96,8 @@ export function periodPaymentView(facts: CaseFacts): PeriodPaymentView {
   const periodLabel = facts.loan.periods_per_year === 12 ? '每月' : '每期';
   const unknownFee = hasUnknownFeeAmount(facts.fees);
 
-  if (payment !== null && facts.loan.repay_method === 'equal_installment') {
+  const matchesPlan = facts.repayments.every((repayment) => decimalSub(repayment.amount, payment) === '0');
+  if (payment !== null && facts.loan.repay_method === 'equal_installment' && matchesPlan) {
     if (!unknownFee) {
       return { kind: 'fixed', amount: payment, label: periodLabel, note: '按合同固定每期还款展示，不再把首期当成所有期次。' };
     }

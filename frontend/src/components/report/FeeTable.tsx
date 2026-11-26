@@ -106,15 +106,13 @@ export function FeeTable({ report }: { report: AuditReport }) {
     ? ledger.filter((item) => item.category === 'included_in_repayment').map((item) => item.total)
     : report.facts.fees
       .filter((fee) => fee.contingent === false && fee.included_in_cashflows === true && fee.timing !== 'upfront' && !(fee.timing === 'specific_period' && fee.period === 0))
-      // 利息推导仍允许用单次金额兜底：并入还款但周期未定的费用若被漏减，利息会被虚高。
-      // 严格口径只用于「核算合计」展示列，两者不能混用。
-      .map((fee) => feeTotalView(fee, totals, termPeriods).total ?? fee.amount)
-      .filter((total): total is string => total !== null);
+      .map((fee) => feeTotalView(fee, totals, termPeriods).total);
   const deductedFromDisbursement = ledger.length
     ? ledger.filter((item) => item.category === 'deducted_from_disbursement')
     : [];
-  const interest = summary ? decimalSub(decimalSub(summary.total_repayment, summary.principal), decimalSum(includedInRepayment) ?? '0') : null;
-  const includedTotal = decimalSum(includedInRepayment);
+  const allIncludedAmountsKnown = includedInRepayment.every((amount) => amount !== null);
+  const includedTotal = allIncludedAmountsKnown ? decimalSum(includedInRepayment) : null;
+  const interest = summary && allIncludedAmountsKnown ? decimalSub(decimalSub(summary.total_repayment, summary.principal), includedTotal ?? '0') : null;
   const deductedTotal = decimalSum(deductedFromDisbursement.map((item) => item.total));
   const totalPayment = summary?.total_payment ?? null;
   const received = receivedAmount(summary, loan);
@@ -251,7 +249,7 @@ export function FeeTable({ report }: { report: AuditReport }) {
           {paymentView.kind !== 'fixed' && perPeriodFees.length && perPeriodFeeTotal !== null ? (
             <p className="mt-2 text-sm text-amber">另有{perPeriodFees.map((fee) => `${fee.name} ${money(fee.amount)}`).join('、')}，每期是否合并、合并后实付多少仍需以还款计划确认；这里不把首笔当成每期合计。</p>
           ) : null}
-          {includedTotal !== null ? <p className="mt-2 text-xs text-mute">其中 {money(includedTotal)}费用已含在每期还款额里，不重复计入；利息已按「还款计划合计 − 本金 − 这部分费用」计算。</p> : null}
+          {includedTotal !== null ? <p className="mt-2 text-xs text-mute">其中 {money(includedTotal)}费用已含在还款计划里，不重复计入；利息已按「还款计划合计 − 本金 − 这部分费用」计算。</p> : null}
           {deductedTotal !== null ? <p className="mt-2 text-xs text-mute">另有 {money(deductedTotal)}费用在到账时已扣除，所以「到手」少于本金；这部分不在「全期实际支付」里，因为钱没有经过你的手。</p> : null}
         </div>
         {report.calculation_error?.code === 'CALCULATION_INCONSISTENT' ? <p role="alert" className="mt-3 text-sm text-amber">{report.calculation_error.message}</p> : null}

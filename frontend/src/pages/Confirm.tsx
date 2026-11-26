@@ -10,6 +10,7 @@ import OtherInfo from '../components/OtherInfo.tsx';
 import type { PageLoader } from '../components/DocumentPage.tsx';
 import { LoadingSteps } from './Upload.tsx';
 import { booleanFact, feeBlockers, feeGaps, routeQuestion, setBooleanFact } from '../lib/fee-decision.ts';
+import { createDraftGuard, DraftGuardContext, useDraftBlocker } from '../lib/draft-guard.ts';
 import type { CaseFacts, CaseSnapshot, DocumentParsed, Evidence } from '../types/audit.ts';
 
 export function StickyBar({ busy, onConfirm, onReset, onCancel }: { busy: boolean; onConfirm: () => void; onReset: () => void; onCancel: () => void }) {
@@ -59,6 +60,8 @@ export default function Confirm({ current, parsed, busy, stage, onConfirm, onRes
   const [applied, setApplied] = useState<FeePrefill[]>(() => (current as CaseSnapshot & { fee_prefills?: FeePrefill[] }).fee_prefills ?? []);
   const [basisNotice, setBasisNotice] = useState('');
   const [focused, setFocused] = useState<Evidence | null>(null), [error, setError] = useState('');
+  const [draftGuard] = useState(createDraftGuard);
+  const draftBlocker = useDraftBlocker(draftGuard);
   const suggestions = inferFeePrefills(facts, current.evidence, current.conflicts, sourceFacts);
   const manual = current.materials.length === 0;
   const gaps = feeGaps(facts);
@@ -94,7 +97,7 @@ export default function Confirm({ current, parsed, busy, stage, onConfirm, onRes
     setFocused(item);
     document.getElementById('source-card')?.scrollIntoView({ block: 'start', behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' });
   };
-  return <section className="animate-rise"><h1 className="font-serif text-display font-bold">{manual ? '填写这笔借款的信息' : '确认读取结果'}</h1><p className="mt-3 text-ink-soft">{manual ? '没有上传材料，按合同或明示表把实际到账、每期还款和另收费用填好。未知信息可以保留，报告会说明限制。' : '先对照原文，再确认实际到账、每期还款和另收费用。未知信息可以保留，报告会说明限制。'}</p>
+  return <DraftGuardContext.Provider value={draftGuard}><section className="animate-rise"><h1 className="font-serif text-display font-bold">{manual ? '填写这笔借款的信息' : '确认读取结果'}</h1><p className="mt-3 text-ink-soft">{manual ? '没有上传材料，按合同或明示表把实际到账、每期还款和另收费用填好。未知信息可以保留，报告会说明限制。' : '先对照原文，再确认实际到账、每期还款和另收费用。未知信息可以保留，报告会说明限制。'}</p>
     {current.conflicts.length > 0 && <Card inset tone="amber" className="mt-4"><h2 className="text-sm font-medium">材料中的冲突</h2>{current.conflicts.map((conflict, index) => <p key={index} className="mt-2 text-sm">{conflict.description}</p>)}</Card>}
     <fieldset disabled={busy} className="mt-6 min-w-0">
       {manual ? <><p className="mb-4 text-sm text-mute">手工录入，没有材料原文可对照；按合同或明示表填下面几项即可。</p>
@@ -107,9 +110,11 @@ export default function Confirm({ current, parsed, busy, stage, onConfirm, onRes
       <FactsFold facts={facts} current={current} onChange={changeFacts} />
       <OtherInfo facts={facts} onChange={changeFacts} />
     </fieldset>
+    {draftBlocker && <p role="status" className="mt-4 text-sm text-amber">{draftBlocker}</p>}
     {gaps.length > 0 && <p role="status" className="mt-4 text-sm text-amber">还有 {gaps.length} 项没核实：{gaps[0]}{gaps.length > 1 ? `（共 ${gaps.length} 项）` : ''} 可以留空提交，报告会写明这一项没核实。</p>}
     {basisNotice && <p role="status" className="mt-4 text-sm text-ink-soft">{basisNotice}</p>}{error && <p role="alert" className="mt-4 text-sm text-ink-soft">{error}</p>}{busy && <LoadingSteps stage={stage} onCancel={onCancel} />}
     <StickyBar busy={busy} onCancel={onCancel} onReset={onReset} onConfirm={() => {
+      if (draftGuard.blocker()) return;
       const parsedFacts = caseFactsSchema.safeParse(facts);
       if (!parsedFacts.success) { const first = parsedFacts.error.issues[0]; setError(`请核对 ${first?.path.join('.')}：${first?.message}`); return; }
       const blockers = feeBlockers(parsedFacts.data);
@@ -118,5 +123,5 @@ export default function Confirm({ current, parsed, busy, stage, onConfirm, onRes
       const prefillFeeIds = suggestions.filter(item => adoptedHere.current.has(item.fee_id) && !edited.current.has(item.fee_id) && parsedFacts.data.fees.find(fee => fee.id === item.fee_id)?.included_in_cashflows === item.value).map(item => item.fee_id);
       onConfirm(parsedFacts.data, prefillFeeIds);
     }} />
-  </section>;
+  </section></DraftGuardContext.Provider>;
 }
