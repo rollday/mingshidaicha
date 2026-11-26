@@ -25,7 +25,11 @@ def prepare_visual(payload):
             raise PdfError('PDF_ENCRYPTED', 'Encrypted PDFs are not supported')
         pages = requested if requested is not None else list(range(1, doc.page_count + 1))
         if not isinstance(pages, list) or not pages or len(pages) > limit:
-            raise PdfError('VISION_PAGE_LIMIT', 'Too many image pages; split the material or use manual entry')
+            raise PdfError(
+                'VISION_PAGE_LIMIT',
+                'Too many image pages; use a searchable PDF or manual entry',
+                {'page_count': len(pages) if isinstance(pages, list) else None, 'max_pages': limit},
+            )
         images = []
         total_bytes = 0
         for page_number in pages:

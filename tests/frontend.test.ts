@@ -65,6 +65,9 @@ test('frontend turns upload failures into actionable Chinese copy and keeps unkn
   assert.equal(tooManyPages.body.includes('30 页'), true);
   assert.equal(tooManyPages.body.includes('max_pages'), false);
   assert.equal(errorCopy({ code: 'PDF_PAGE_LIMIT_EXCEEDED', message: 'PDF exceeds max_pages' }).body.startsWith('这份 PDF 超出了'), true);
+  const scanLimit = errorCopy({ code: 'VISION_PAGE_LIMIT', message: 'Too many image pages', details: { page_count: 5, max_pages: 4 } });
+  assert.match(scanLimit.body, /5 页无法直接读取文字.*最多按图片识别 4 页.*可选中文字的 PDF/);
+  assert.match(errorCopy({ code: 'VISION_PAGE_LIMIT', message: 'Too many image pages' }).body, /超过上限.*手工填写/);
   assert.equal(errorCopy({ code: 'DOCUMENT_LIMIT', message: '每个会话最多上传 5 份材料。' }).title, '材料份数超了');
   assert.equal(errorCopy({ code: 'MODEL_INVALID_FIELDS', message: '业务事实抽取未通过结构校验，请重试或手工录入。' }).body, '业务事实抽取未通过结构校验，请重试或手工录入。');
   assert.equal(errorCopy({ code: 'PYTHON_PROTOCOL_ERROR', message: 'Worker crashed' }).body.includes('开发者'), true);

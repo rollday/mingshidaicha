@@ -22,6 +22,16 @@ const copies: Record<string, (error: ApiError) => ErrorCopy> = {
   PDF_ENCRYPTED: () => ({ title: '这份 PDF 有密码', body: '加了密码的 PDF 读不了。请先打开、另存一份不加密的，或者只把需要核对的几页打印成新的 PDF 再上传。' }),
   PDF_OPEN_FAILED: () => ({ title: '这份 PDF 打不开', body: '文件可能已经损坏。可以换一份原始文件，或者把关键几页截图成图片上传。' }),
   PDF_DEPENDENCY_MISSING: () => ({ title: '这台服务器暂时读不了 PDF', body: '服务端缺少解析 PDF 的组件。这不是你的材料问题，请联系开发者处理。' }),
+  VISION_PAGE_LIMIT: error => {
+    const details = (error.details && typeof error.details === 'object' ? error.details : {}) as { page_count?: unknown; max_pages?: unknown };
+    const pages = finite(details.page_count), limit = finite(details.max_pages);
+    const count = pages === null ? '' : `有 ${pages} 页无法直接读取文字。`;
+    const cap = limit === null ? '需要按图片识别的页数超过上限。' : `单份材料最多按图片识别 ${limit} 页。`;
+    return {
+      title: '这份材料需要识别的图片页太多',
+      body: `${count}${cap}请上传可选中文字的 PDF，或先对扫描件做文字识别再上传。也可以选择手工填写。`,
+    };
+  },
   DOCUMENT_LIMIT: () => ({ title: '材料份数超了', body: '一次最多 5 份材料。把同一份文件的多页合成一个 PDF，或者先删掉不打算核对的那份，再提交。' }),
   FILE_TOO_LARGE: () => ({ title: '文件太大', body: '单份材料不能超过 10MB。可以压缩 PDF，或者只截取需要核对的那几页。' }),
   UNSUPPORTED_MEDIA: () => ({ title: '这个格式读不了', body: '只支持 PDF、PNG、JPG。材料是 WORD 或表格导出的话，先导成 PDF 再上传。' }),

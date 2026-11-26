@@ -30,3 +30,4 @@ class VisualTests(unittest.TestCase):
             with self.assertRaises(PdfError) as error:
                 prepare_visual({'path': str(path), 'pages': [1, 2, 3, 4, 5], 'max_pages': 4})
             self.assertEqual(error.exception.code, 'VISION_PAGE_LIMIT')
+            self.assertEqual(error.exception.details, {'page_count': 5, 'max_pages': 4})
