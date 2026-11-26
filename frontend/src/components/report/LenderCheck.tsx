@@ -13,6 +13,8 @@ const lenderTypes: Record<CaseFacts['lender']['type'], string> = {
 const placeholderTitles = /^(?:untitled|无标题|未命名|空标题|-+|—+)$/i;
 function isPlaceholderSource(source: LenderSearchSource): boolean {
   if (source.name_match) return false;
+  // 能读取官方详情页的来源（nfraDocId 只认同域的 ItemDetail 页）：标题缺失也要保留，否则连“读取官方详情”入口一起消失。
+  if (nfraDocId(source.url)) return false;
   const title = (source.title ?? '').trim();
   if (!title) return true;
   if (placeholderTitles.test(title)) return true;
@@ -62,7 +64,7 @@ export function LenderCheck({ report,busy,onSearch,onReadOfficial }: { report: A
             const visible = category.sources.filter(source => !isPlaceholderSource(source));
             return <div key={category.kind} className="rounded-md border border-line p-4">
             <h4 className="text-base font-medium">{labels[category.kind]}</h4>
-            <p className="mt-1 text-xs text-mute">{visible.length === 0 ? '未检索到相关索引页面；不代表没有相关资质或记录' : category.status==='sources_found'?'检索到公开页面，可打开原文或读取已接通的官方详情':category.status==='unavailable'?'本次检索未完成，可重试':'未检索到相关索引页面；不代表没有相关资质或记录'}</p>
+            <p className="mt-1 text-xs text-mute">{category.status==='unavailable'?'本次检索未完成，可重试':category.status==='sources_found'&&visible.length>0?'检索到公开页面，可打开原文或读取已接通的官方详情':'未检索到相关索引页面；不代表没有相关资质或记录'}</p>
             {category.kind==='license'&&<p className="mt-2 text-xs text-mute">金融许可证官方查询入口需要验证码，目前请人工查询。</p>}
             {category.kind==='registry'&&<p className="mt-2 text-xs text-mute">企业登记详情尚未接通，请在官方公示系统核对。</p>}
             {visible.map(source=>{

@@ -64,6 +64,15 @@ function EvidenceSection({ rows }: { rows: readonly EvidenceRow[] }) {
   const detailsRef = useRef<HTMLDetailsElement>(null);
   const anchorKey = rows.map((row) => row.anchor).join('|');
   useEffect(() => {
+    // 地址里的锚点可能是非法转义（如 #%），decodeURIComponent 会抛 URIError；
+    // 这里吞掉异常返回空串，避免在首帧 effect 里抛错导致整页白屏。
+    const decodeAnchor = (value: string) => {
+      try {
+        return decodeURIComponent(value);
+      } catch {
+        return '';
+      }
+    };
     // 收起时浏览器定位不到 details 内部节点：先展开，再补一次滚动，避免“展开了但没跳过去”。
     const focusAnchor = (target: string) => {
       const node = target ? document.getElementById(target) : null;
@@ -72,11 +81,11 @@ function EvidenceSection({ rows }: { rows: readonly EvidenceRow[] }) {
       details.open = true;
       requestAnimationFrame(() => node.scrollIntoView({ block: 'start' }));
     };
-    const reveal = () => focusAnchor(window.location.hash ? decodeURIComponent(window.location.hash.slice(1)) : '');
+    const reveal = () => focusAnchor(decodeAnchor(window.location.hash.slice(1)));
     // 同一个锚点重复点击时 hash 不变、不触发 hashchange，这里直接按链接目标展开。
     const onClick = (event: MouseEvent) => {
       const href = (event.target as HTMLElement | null)?.closest?.('a[href^="#"]')?.getAttribute('href') ?? '';
-      if (href.length > 1) focusAnchor(decodeURIComponent(href.slice(1)));
+      if (href.length > 1) focusAnchor(decodeAnchor(href.slice(1)));
     };
     reveal();
     window.addEventListener('hashchange', reveal);
