@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react';
+import { useEffect, useRef, type ReactNode } from 'react';
 import type { AuditReport, CaseFacts, Evidence } from '../../types/audit.ts';
 import { decimalAdd, decimalSub, decimalSum, money, moneyPlain, triState } from '../../lib/format.ts';
 import { feeEvidence } from '../../lib/fee-review.ts';
@@ -61,10 +61,35 @@ type EvidenceRow = {
 };
 
 function EvidenceSection({ rows }: { rows: readonly EvidenceRow[] }) {
+  const detailsRef = useRef<HTMLDetailsElement>(null);
+  const anchorKey = rows.map((row) => row.anchor).join('|');
+  useEffect(() => {
+    // 收起时浏览器定位不到 details 内部节点：先展开，再补一次滚动，避免“展开了但没跳过去”。
+    const focusAnchor = (target: string) => {
+      const node = target ? document.getElementById(target) : null;
+      const details = detailsRef.current;
+      if (!node || !details || details.open || !details.contains(node)) return;
+      details.open = true;
+      requestAnimationFrame(() => node.scrollIntoView({ block: 'start' }));
+    };
+    const reveal = () => focusAnchor(window.location.hash ? decodeURIComponent(window.location.hash.slice(1)) : '');
+    // 同一个锚点重复点击时 hash 不变、不触发 hashchange，这里直接按链接目标展开。
+    const onClick = (event: MouseEvent) => {
+      const href = (event.target as HTMLElement | null)?.closest?.('a[href^="#"]')?.getAttribute('href') ?? '';
+      if (href.length > 1) focusAnchor(decodeURIComponent(href.slice(1)));
+    };
+    reveal();
+    window.addEventListener('hashchange', reveal);
+    document.addEventListener('click', onClick);
+    return () => {
+      window.removeEventListener('hashchange', reveal);
+      document.removeEventListener('click', onClick);
+    };
+  }, [anchorKey]);
   return (
-    <div className="mt-4 border-t border-line pt-4" aria-label="逐项证据">
-      <h3 className="text-sm font-medium">逐项依据</h3>
-      <p className="mt-1 text-xs leading-relaxed text-mute">点上方“依据”可跳到对应原文摘录；没有找到原文的行标为“依据待补”。本金、利息的“整表”只说明明示表整体状态，不能代替逐项列明证据。</p>
+    <details ref={detailsRef} className="mt-4 border-t border-line pt-4" aria-label="逐项证据">
+      <summary className="cursor-pointer text-sm font-medium">逐项依据（{rows.length} 项）</summary>
+      <p className="mt-2 text-xs leading-relaxed text-mute">点上方“依据”可跳到对应原文摘录；没有找到原文的行标为“依据待补”。本金、利息的“整表”只说明明示表整体状态，不能代替逐项列明证据。</p>
       <div className="mt-3 flex flex-col gap-3">
         {rows.map((row) => <div key={row.anchor} id={row.anchor} className="scroll-mt-24 rounded-md bg-canvas p-3">
           <p className="text-sm font-medium">{row.label}</p>
@@ -78,7 +103,7 @@ function EvidenceSection({ rows }: { rows: readonly EvidenceRow[] }) {
           )) : <p className="mt-1 text-xs text-mute">没有找到可定位的原文，依据待补。</p>}
         </div>)}
       </div>
-    </div>
+    </details>
   );
 }
 

@@ -1,5 +1,5 @@
 import {useEffect,useState} from 'react';
-import type { AuditReport, CaseFacts, OfficialDocument } from '../../types/audit.ts';
+import type { AuditReport, CaseFacts, LenderSearchSource, OfficialDocument } from '../../types/audit.ts';
 import {nfraDocId} from '../../../../shared/official-source.ts';
 import { triState } from '../../lib/format.ts';
 import { Button, Card, Tag, Field,fieldInputClass } from '../base/index.tsx';
@@ -8,6 +8,16 @@ const lenderTypes: Record<CaseFacts['lender']['type'], string> = {
   bank: '银行', consumer_finance: '消费金融公司', microloan: '小额贷款公司',
   platform: '平台', other: '其他', unknown: '类型待确认',
 };
+
+/** 上游搜索服务会把无标题结果写成 Untitled。这类条目既不指向具体页面，也没匹配到机构名，不应展示。 */
+const placeholderTitles = /^(?:untitled|无标题|未命名|空标题|-+|—+)$/i;
+function isPlaceholderSource(source: LenderSearchSource): boolean {
+  if (source.name_match) return false;
+  const title = (source.title ?? '').trim();
+  if (!title) return true;
+  if (placeholderTitles.test(title)) return true;
+  return title === source.url;
+}
 
 function OfficialDetail({document}:{document:OfficialDocument}) {
   if(document.status!=='retrieved')return <p className="mt-2 text-sm text-mute">{document.status==='unsupported_source'?'此来源尚未接通详情接口，请打开官方原文核对。':'本次未能读取官方详情，可以重试或打开官方原文。'}读取失败不代表没有记录。</p>;
@@ -48,12 +58,14 @@ export function LenderCheck({ report,busy,onSearch,onReadOfficial }: { report: A
         <div className="flex flex-col gap-3 border-t border-line pt-4"><h3 className="text-base font-medium">检索公开来源</h3><p className="text-sm text-mute">点击后会将机构名称发送给搜索服务，查找监管和企业登记公开页面。结果作为核实线索，不自动改变上方资质信息。</p><Field><input aria-label="公开检索的机构名称" className={fieldInputClass} value={name} maxLength={100} onChange={event=>setName(event.target.value)} placeholder="请输入合同上的完整机构名称" /></Field><Button disabled={busy || name.trim().length<2} onClick={()=>onSearch(name.trim())} className="self-start">检索公开来源</Button></div>
         {result && result.name===name.trim() && <div className="flex flex-col gap-4">
           <p className="text-xs text-mute">检索名称：{result.name} · {new Date(result.queried_at).toLocaleString('zh-CN')}</p>
-          {result.categories.map(category=><div key={category.kind} className="rounded-md border border-line p-4">
+          {result.categories.map(category => {
+            const visible = category.sources.filter(source => !isPlaceholderSource(source));
+            return <div key={category.kind} className="rounded-md border border-line p-4">
             <h4 className="text-base font-medium">{labels[category.kind]}</h4>
-            <p className="mt-1 text-xs text-mute">{category.status==='sources_found'?'检索到公开页面，可打开原文或读取已接通的官方详情':category.status==='unavailable'?'本次检索未完成，可重试':'未检索到相关索引页面；不代表没有相关资质或记录'}</p>
+            <p className="mt-1 text-xs text-mute">{visible.length === 0 ? '未检索到相关索引页面；不代表没有相关资质或记录' : category.status==='sources_found'?'检索到公开页面，可打开原文或读取已接通的官方详情':category.status==='unavailable'?'本次检索未完成，可重试':'未检索到相关索引页面；不代表没有相关资质或记录'}</p>
             {category.kind==='license'&&<p className="mt-2 text-xs text-mute">金融许可证官方查询入口需要验证码，目前请人工查询。</p>}
             {category.kind==='registry'&&<p className="mt-2 text-xs text-mute">企业登记详情尚未接通，请在官方公示系统核对。</p>}
-            {category.sources.map(source=>{
+            {visible.map(source=>{
               const document=result.official_documents?.[source.url];
               return <article key={source.url} className="mt-3 border-t border-line pt-3">
                 <a href={source.url} target="_blank" rel="noreferrer" className="break-words text-sm text-blue underline">{source.title}</a>
@@ -63,7 +75,8 @@ export function LenderCheck({ report,busy,onSearch,onReadOfficial }: { report: A
                 {source.snippet && <details className="mt-2"><summary className="cursor-pointer text-xs text-mute">查看检索摘要（未核验）</summary><p className="mt-2 whitespace-pre-wrap break-words text-2xs text-ink-soft">{source.snippet}</p></details>}
               </article>;
             })}
-          </div>)}
+          </div>;
+          })}
           <ul className="list-inside list-disc text-xs text-mute">{result.limitations.map(text=><li key={text}>{text}</li>)}</ul>
         </div>}
         {result && result.name!==name.trim() && <p className="text-xs text-mute">名称已修改，请重新检索。报告数据保留上一次按“{result.name}”检索的记录。</p>}
