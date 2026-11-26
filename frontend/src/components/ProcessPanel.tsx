@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import type { CaseState } from '../lib/case-client.ts';
 import { methodNames, money, percent } from '../lib/format.ts';
+import { errorCopy } from '../lib/error-copy.ts';
 import type {
   Activity,
   DocumentParsed,
@@ -371,7 +372,7 @@ export default function ProcessPanel({
 
   const newestTime = newest ? displayTime(newest.timestamp) : null;
   const fallbackStatus = state.stage ? stageName(state.stage) : '等待处理状态';
-  const newestMessage = state.error?.message ?? state.warning ?? newest?.message ?? fallbackStatus;
+  const newestMessage = (state.error ? errorCopy(state.error).body : null) ?? state.warning ?? newest?.message ?? fallbackStatus;
 
   return (
     <Card as="section" aria-labelledby="process-panel-heading" className="mb-6 flex min-w-0 flex-col gap-5" padding="md">

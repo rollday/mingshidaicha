@@ -5,6 +5,8 @@ import { createBackend } from '../src/server.ts';
 import { config } from '../src/config.ts';
 import { CaseClient, applyEvent, initialState } from '../frontend/src/lib/case-client.ts';
 import { decimal, money, percent, triState, shiftDecimal } from '../frontend/src/lib/format.ts';
+import { errorCopy } from '../frontend/src/lib/error-copy.ts';
+import { guessMaterialRole } from '../frontend/src/lib/upload-roles.ts';
 
 test('frontend formats decimal strings without float conversion and preserves unknowns', () => {
   assert.equal(money('9007199254740993.995'), '9,007,199,254,740,994.00 元');
@@ -54,4 +56,31 @@ test('browser client completes a real WS manual review, correction and Python re
   await client.reset();
   assert.equal(client.state.connection,'ready'); assert.equal(client.state.current,null);
   assert.deepEqual(client.state.parsed,{});
+});
+
+test('frontend turns upload failures into actionable Chinese copy and keeps unknown Chinese messages', () => {
+  const tooManyPages = errorCopy({ code: 'PDF_PAGE_LIMIT_EXCEEDED', message: 'PDF exceeds max_pages', details: { page_count: 64, max_pages: 30 } });
+  assert.equal(tooManyPages.title, '这份 PDF 页数太多');
+  assert.equal(tooManyPages.body.includes('64 页'), true);
+  assert.equal(tooManyPages.body.includes('30 页'), true);
+  assert.equal(tooManyPages.body.includes('max_pages'), false);
+  assert.equal(errorCopy({ code: 'PDF_PAGE_LIMIT_EXCEEDED', message: 'PDF exceeds max_pages' }).body.startsWith('这份 PDF 超出了'), true);
+  assert.equal(errorCopy({ code: 'DOCUMENT_LIMIT', message: '每个会话最多上传 5 份材料。' }).title, '材料份数超了');
+  assert.equal(errorCopy({ code: 'MODEL_INVALID_FIELDS', message: '业务事实抽取未通过结构校验，请重试或手工录入。' }).body, '业务事实抽取未通过结构校验，请重试或手工录入。');
+  assert.equal(errorCopy({ code: 'PYTHON_PROTOCOL_ERROR', message: 'Worker crashed' }).body.includes('开发者'), true);
+});
+
+test('guessMaterialRole types common material names and falls back to unknown', () => {
+  assert.equal(guessMaterialRole('个人贷款综合融资成本明示表.pdf'), 'disclosure');
+  assert.equal(guessMaterialRole('借款合同.pdf'), 'contract');
+  assert.equal(guessMaterialRole('还款计划表.png'), 'schedule');
+  assert.equal(guessMaterialRole('合同+明示表扫描件.pdf'), 'disclosure');
+  assert.equal(guessMaterialRole('IMG_2043.jpg'), 'other');
+  assert.equal(guessMaterialRole('2026-09 银行放款截图.PNG'), 'other');
+});
+
+test('frontend never shows a machine-string error to the user', () => {
+  assert.equal(errorCopy({ code: 'PDF_ENCRYPTED', message: 'Encrypted PDFs are not supported' }).title, '这份 PDF 有密码');
+  assert.equal(errorCopy({ code: 'UNKNOWN', message: 'loan.principal must be a decimal string' }).body.includes('must be'), false);
+  assert.equal(errorCopy({ code: 'UNKNOWN', message: 'Worker crashed' }).body.includes('Worker'), false);
 });
