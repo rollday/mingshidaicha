@@ -1,5 +1,6 @@
 import type { AuditReport } from '../../types/audit.ts';
 import { money, percent } from '../../lib/format.ts';
+import { describeCorrectionObject } from '../../lib/report-display.ts';
 import { Card } from '../base/index.tsx';
 
 const COLLAPSE_AFTER = 6;
@@ -72,26 +73,9 @@ function CorrectionValue({ label, field, value }: { label: string; field: string
     else if (/^(?:-?\d+(?:\.\d+)?)$/.test(value) && /apr|rate|年化|利率/i.test(field)) display = percent(value);
     else display = valueLabels[value] ?? (value || '空');
   }
-  else if (typeof value === 'object') display = describeFee(value as Record<string, unknown>);
+  else if (typeof value === 'object') display = describeCorrectionObject(value as Record<string, unknown>, field);
   else display = String(value);
   return <p className="min-w-0 break-words"><span className="text-mute">{label}：</span>{display}</p>;
-}
-
-const feeFieldLabels: Record<string, string> = {
-  name: '名称', amount: '金额', timing: '发生时间', payee: '收取主体', payee_type: '收取主体类型',
-  in_disclosure: '列在明示表', included_in_disclosed_cost: '计入明示年化', contingent: '或有费用', period: '指定期次',
-};
-
-/** 费用对象按中文要点展示，不输出 id 和原始 JSON。 */
-function describeFee(value: Record<string, unknown>): string {
-  const pairs = Object.entries(feeFieldLabels)
-    .filter(([key]) => key in value && value[key] !== null && value[key] !== undefined)
-    .map(([key, label]) => {
-      const item = value[key];
-      const shown = typeof item === 'boolean' ? (item ? '是' : '否') : typeof item === 'string' ? (valueLabels[item] ?? item) : String(item);
-      return `${label} ${shown}`;
-    });
-  return pairs.length ? pairs.join('；') : '待确认';
 }
 
 function correctionLabel(correction: AuditReport['corrections'][number]): string {
@@ -99,10 +83,15 @@ function correctionLabel(correction: AuditReport['corrections'][number]): string
     included_in_cashflows: '是否已含在到账或还款额中', included_in_disclosed_cost: '是否计入明示年化',
     name: '费用名称', amount: '费用金额', contingent: '是否或有', timing: '发生时间', period: '指定期次',
     payee: '收取主体', payee_type: '收取主体类型', in_disclosure: '是否列在明示表',
+    date: '还款日期',
   };
   const match = /^fees\[(\d+)\]\.(.+)$/.exec(correction.field);
   const metadata = correction as typeof correction & { fee_name?: string; fee_id?: string };
   if (/^fees\[\d+\]$/.test(correction.field)) return `${metadata.fee_name ?? metadata.fee_id ?? correction.field} · ${correction.after === null ? '费用已删除' : '费用项目'}`;
+  if (/^repayments\[\d+\]$/.test(correction.field)) {
+    const index = Number(/^repayments\[(\d+)\]$/.exec(correction.field)?.[1] ?? 0);
+    return `还款第 ${index + 1} 笔 · 还款计划`;
+  }
   if (match) return `${metadata.fee_name ?? (metadata.fee_id ? `费用（${metadata.fee_id}）` : `费用第 ${Number(match[1]) + 1} 项`)} · ${fields[match[2]!] ?? match[2]}`;
   const base = fieldLabels[correction.field] ?? fields[correction.field] ?? correction.field;
   return metadata.fee_name ? `${metadata.fee_name} · ${base}` : base;

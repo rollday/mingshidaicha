@@ -74,7 +74,7 @@ export default function Report({
           </div>
           <p className="text-sm text-ink-soft">
             {report.facts.lender.name ?? '放款方待确认'}
-            {loan.principal !== null ? ` · 本金 ${money(loan.principal)}` : ''}
+            {loan.principal !== null ? ` · 合同本金 ${money(loan.principal)}` : ''}
             {loan.term_periods !== null ? ` · 共 ${loan.term_periods} 期` : ''}
           </p>
           <p className="text-sm text-mute">

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react
 import type { AuditReport, RuleResult } from '../../types/audit.ts';
 import { rulePresentation } from '../../../../shared/rule-policy.ts';
 import { moneyPlain, percent } from '../../lib/format.ts';
+import { undisclosedSeparateFees } from '../../lib/report-display.ts';
 import { AccordionCard, Card, Tag, type Tone } from '../base/index.tsx';
 import { resolveRuleHash, ruleAnchorId } from './rule-navigation.ts';
 
@@ -243,9 +244,9 @@ function issueHeadline(rule: RuleResult, report: AuditReport) {
     return <>按实际支出算，年化是 <mark className="hl-red">{percent(comparison.computed_apr)}</mark>，不是 {percent(comparison.quoted_apr)}</>;
   }
   if (rule.rule_id === 'R03') {
-    const fee = undisclosed.find((item) => item.timing === 'per_period' && item.amount !== null);
+    const fee = undisclosedSeparateFees(report.facts.fees).find((item) => item.timing === 'per_period' && item.amount !== null);
     if (fee?.amount != null) {
-      return <>每期多收 <mark className="hl">{moneyPlain(fee.amount)} 元</mark>，明示表里一个字没写</>;
+      return <>每期另有 <mark className="hl">{moneyPlain(fee.amount)} 元</mark>，明示表里没写，且没有并入还款</>;
     }
   }
   if (rule.rule_id === 'R05') {

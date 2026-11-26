@@ -1,8 +1,14 @@
 import type { ReactNode } from 'react';
 import type { AuditReport } from '../../types/audit.ts';
 import { comparisonStatus, unavailableComparisonLabels, unsupportedDisclosureHint } from '../../../../shared/apr-comparison.ts';
-import { estimateFeeTotal } from '../../../../shared/fee-total.ts';
-import { decimal, decimalSum, methodNames, money, moneyPlain, percent } from '../../lib/format.ts';
+import { decimal, methodNames, money, moneyPlain, percent } from '../../lib/format.ts';
+import {
+  includedFeePhrase,
+  receivedAmount,
+  undisclosedIncludedFees,
+  undisclosedSeparateFees,
+  undisclosedSeparateTotal,
+} from '../../lib/report-display.ts';
 import { Card, Tag, type Tone } from '../base/index.tsx';
 import { SummaryCard } from './SummaryCard.tsx';
 
@@ -27,21 +33,23 @@ export function VerdictCard({ report }: { report: AuditReport }) {
   const tone = levelTone[report.conclusion.level];
   const accent = tone === 'red' ? 'border-l-red' : tone === 'amber' ? 'border-l-amber' : 'border-l-blue';
   const loan = report.facts.loan;
-  const received = summary?.disbursed ?? loan.disbursed ?? loan.principal;
+  const received = receivedAmount(summary, loan);
   const total = summary?.total_payment ?? null;
   const totals = new Map((report.calculation?.fee_totals ?? []).map((item) => [item.id, item]));
-  const undisclosedSeparate = report.facts.fees.filter((fee) =>
-    fee.contingent === false && fee.in_disclosure === false && fee.included_in_cashflows === false,
-  );
-  const extra = decimalSum(undisclosedSeparate.map((fee) => totals.get(fee.id)?.total ?? estimateFeeTotal(fee, loan.term_periods)?.total ?? fee.amount));
+  const undisclosedSeparate = undisclosedSeparateFees(report.facts.fees);
+  const undisclosedIncluded = undisclosedIncludedFees(report.facts.fees);
+  const extra = undisclosedSeparateTotal(report.facts.fees, totals, loan.term_periods);
   const feeForLede = undisclosedSeparate.find((fee) => fee.timing === 'per_period' && fee.amount !== null) ?? undisclosedSeparate[0] ?? null;
+  const includedForLede = undisclosedIncluded.find((fee) => fee.timing === 'per_period' && fee.amount !== null) ?? undisclosedIncluded[0] ?? null;
 
   let lede: ReactNode = null;
   if (canCompare) {
     lede = feeForLede ? (
-      <>合同上写的年化是 {percent(quoted)}，但{feeForLede.timing === 'per_period' ? `每期还要另收 ${moneyPlain(feeForLede.amount)} 元${feeForLede.name}` : `还有${feeForLede.name} ${money(feeForLede.amount)}`}，表里没写。把这两笔算在一起，实际年化约 <mark className="hl-red">{percent(computed)}</mark>。</>
+      <>合同上写的年化是 {percent(quoted)}，但{feeForLede.timing === 'per_period' ? `每期还要另收 ${moneyPlain(feeForLede.amount)} 元${feeForLede.name}` : `还有${feeForLede.name} ${money(feeForLede.amount)}`}，表里没写。把已经发生的还款和这笔另付费用一起算，实际年化约 <mark className="hl-red">{percent(computed)}</mark>。</>
+    ) : includedForLede ? (
+      <>合同上写的年化是 {percent(quoted)}，但表里没写{includedForLede.name}；这笔钱{includedFeePhrase(includedForLede)}，按实际还款重算约 <mark className="hl-red">{percent(computed)}</mark>。</>
     ) : (
-      <>合同上写的年化是 {percent(quoted)}，按材料重算约 <mark className="hl-red">{percent(computed)}</mark>，差 {decimal(gap)} 个百分点。</>
+      <>合同上写的年化是 {percent(quoted)}，按材料重算约 <mark className="hl-red">{percent(computed)}</mark>{gap !== null ? <>，差 {decimal(gap)} 个百分点。</> : <>。</>}</>
     );
   } else if (computed !== null && computed !== undefined) {
     lede = <>按材料重算约 {percent(computed)}（{methodNames[comparison?.method ?? 'unknown']}），暂无可直接对比的明示年化。</>;
@@ -92,7 +100,7 @@ export function VerdictCard({ report }: { report: AuditReport }) {
               <p className="mt-1 font-serif text-lg font-semibold leading-tight num"><mark className="hl">{total === null ? '—' : moneyPlain(total)}</mark><span className="ml-1 text-xs font-normal text-mute">元</span></p>
             </div>
             <div className="rounded-md bg-amber-bg px-4 py-3 max-sm:col-span-2">
-              <p className="text-xs text-amber">表外多收</p>
+              <p className="text-xs text-amber">表外且另付</p>
               <p className="mt-1 font-serif text-lg font-semibold leading-tight num text-amber">{extra === null ? '—' : <mark className="hl">{moneyPlain(extra)}</mark>}<span className="ml-1 text-xs font-normal text-amber">元</span></p>
             </div>
           </div>
@@ -120,7 +128,7 @@ export function VerdictCard({ report }: { report: AuditReport }) {
             <div className="mt-3 flex flex-col gap-2 text-sm leading-relaxed text-ink-soft">
               <p>年化就是把<strong className="text-ink">利息和各项费用</strong>折算成「一年要付多少」的比率，用来比较不同期限、不同收费方式的贷款谁更贵。</p>
               <p>借 100 元、一年下来多付 12 元，年化就是 12%。</p>
-              {canCompare ? <p>这笔贷款表上写 {percent(quoted)}，但它只算了利息；把{feeForLede ? `每期 ${moneyPlain(feeForLede.amount)} 元${feeForLede.name}` : '表外费用'}也算进去，年化变成 <strong className="text-red">{percent(computed)}</strong>。</p> : null}
+              {canCompare ? <p>这笔贷款表上写 {percent(quoted)}；{feeForLede ? `表里没写每期另收的 ${moneyPlain(feeForLede.amount)} 元${feeForLede.name}，` : includedForLede ? `表里没写${includedForLede.name}（${includedFeePhrase(includedForLede)}），` : '按实际还款安排重算，'}年化约 <strong className="text-red">{percent(computed)}</strong>。</p> : null}
               {canCompare ? <p>注意：{percent(computed)} <strong className="text-ink">不等于</strong>「一共多付 {percent(computed)}」——因为你是分期还本，本金在逐月减少，所以按「平均占用的本金」折算才是这个数。你实际多付的总额是 <strong className="num text-ink">{money(summary?.total_cost)}</strong>。</p> : null}
               {quoted !== null ? <p>明示口径：{methodNames[report.facts.disclosure.quoted_method]}；本工具的比较容差用于提示核对材料。</p> : null}
             </div>
