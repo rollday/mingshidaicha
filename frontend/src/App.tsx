@@ -8,6 +8,7 @@ import Report from './pages/Report.tsx';
 import DevPreview from './pages/DevPreview.tsx';
 import ProcessPanel from './components/ProcessPanel.tsx';
 import { useCase } from './lib/use-case.ts';
+import { errorCopy } from './lib/error-copy.ts';
 import type { Mode } from './types/audit.ts';
 
 function Workflow() {
@@ -25,9 +26,10 @@ function Workflow() {
     }
     window.scrollTo(0,0);
   }, [state.screen]);
+  const failure = state.error ? errorCopy(state.error) : null;
   return <><AppHeader mode={mode} onModeChange={setMode} locked={state.screen !== 'upload' || state.busy} /><main className="mx-auto max-w-page px-gutter pb-12 pt-7">{!showingReport && <StepTrail current={state.screen} />}
     {state.connection !== 'ready' && <div role="status" className="mb-5 flex flex-wrap items-center gap-3 rounded-md border border-line bg-surface p-4 text-sm text-mute">{state.connection === 'connecting' ? '正在连接服务…' : '服务连接已断开。'}{state.connection === 'offline' && <Button onClick={() => void client.open()}>重新连接</Button>}</div>}
-    {state.error && <Card inset className="mb-5" role="alert"><p className="text-base font-medium">这一步没有完成</p><p className="mt-1 text-sm text-ink-soft">{state.error.message}</p><code className="text-xs text-mute">{state.error.code}</code>{state.error.code === 'UNAUTHORIZED' && <Button className="ml-3" onClick={() => void client.reset()}>新建会话</Button>}</Card>}
+    {state.error && failure && <Card inset className="mb-5" role="alert"><p className="text-base font-medium">{failure.title}</p><p className="mt-1 text-sm text-ink-soft" data-error-code={state.error.code}>{failure.body}</p>{state.error.code === 'UNAUTHORIZED' && <Button className="ml-3" onClick={() => void client.reset()}>新建会话</Button>}</Card>}
     {state.warning && (showingReport
       ? <p role="status" className="mb-3 text-2xs text-amber">{state.warning}</p>
       : <Card inset tone="amber" className="mb-5" role="status"><p className="text-sm">{state.warning}</p></Card>)}
