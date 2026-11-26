@@ -49,8 +49,9 @@ function excerpt(value: string, limit = 600): string {
   return value.length > limit ? `${value.slice(0, limit)}…` : value;
 }
 
-function stageName(stage: string): string {
+export function stageName(stage: string): string {
   const names: Record<string, string> = {
+    upload: '正在上传材料',
     parse_pdf: '正在读取 PDF',
     read_images: '正在读取页面图像',
     extract_case: '正在提取材料信息',
@@ -58,6 +59,7 @@ function stageName(stage: string): string {
     calculate: '正在计算借款成本',
     check_rules: '正在检查规则',
     write_report: '正在整理报告',
+    search_sources: '正在检索公开来源',
     search_license: '正在检索许可与机构信息',
     search_registry: '正在检索企业登记信息',
     search_penalty: '正在检索监管处罚信息',
@@ -324,9 +326,11 @@ function ParsedDocuments({ parsed }: { parsed: Record<string, DocumentParsed> })
 export default function ProcessPanel({
   state,
   onCancel,
+  hideCancel = false,
 }: {
   state: CaseState;
   onCancel: () => void;
+  hideCancel?: boolean;
 }) {
   const [elapsedSeconds, setElapsedSeconds] = useState<number | null>(null);
   const activities = state.activities.slice(-ACTIVITY_LIMIT);
@@ -391,7 +395,7 @@ export default function ProcessPanel({
             {newest && newestTime ? <span>最新活动：{newestTime}{newest.revision === null ? '' : ` · 第 ${newest.revision} 版`}</span> : null}
           </div>
         </div>
-        {state.busy ? <Button variant="secondary" className="shrink-0" onClick={onCancel}>取消任务</Button> : null}
+        {state.busy && !hideCancel ? <Button variant="secondary" className="shrink-0" onClick={onCancel}>取消任务</Button> : null}
       </header>
 
       {draft !== null ? <DraftPreview draft={draft} /> : null}

@@ -6,6 +6,7 @@ import Upload from './pages/Upload.tsx';
 import Confirm from './pages/Confirm.tsx';
 import Report from './pages/Report.tsx';
 import DevPreview from './pages/DevPreview.tsx';
+import ProcessFold from './components/ProcessFold.tsx';
 import ProcessPanel from './components/ProcessPanel.tsx';
 import ReportPending from './pages/ReportPending.tsx';
 import { useCase } from './lib/use-case.ts';
@@ -16,7 +17,8 @@ function Workflow() {
   const { state, client } = useCase();
   const [mode, setMode] = useState<Mode>('general');
   const student = mode === 'student';
-  const reportRunning=state.busy&&state.screen==='confirm'&&!state.current?.report&&['calculate','check_rules','write_report'].includes(state.stage);
+  const reportRunning = state.busy && state.screen === 'confirm' && state.current !== null &&
+    !state.current.report && ['calculate', 'check_rules', 'write_report'].includes(state.stage);
   const showingReport = state.screen === 'report' && Boolean(state.current?.report);
   const hasProcessContent = state.busy || state.activities.length > 0 || Boolean(state.checked) ||
     Object.keys(state.parsed).length > 0 || state.liveCategories.length > 0 ||
@@ -34,8 +36,8 @@ function Workflow() {
     {state.warning && (showingReport
       ? <p role="status" className="mb-3 text-2xs text-amber">{state.warning}</p>
       : <Card inset tone="amber" className="mb-5" role="status"><p className="text-sm">{state.warning}</p></Card>)}
-    {state.screen === 'upload' && <ProcessPanel state={state} onCancel={()=>client.cancel()}/>}
-    {state.screen === 'confirm' && hasProcessContent && !reportRunning && <details className="mb-5 rounded-md border border-line bg-surface"><summary className="cursor-pointer px-5 py-3 text-sm font-medium">处理记录（{state.activities.length} 条）</summary><div className="px-4 pb-1"><ProcessPanel state={state} onCancel={()=>client.cancel()}/></div></details>}
+    {!reportRunning && hasProcessContent && (state.screen !== 'report' || state.busy) &&
+      <ProcessFold key={state.screen + ':' + (state.startedAt ?? '')} state={state} onCancel={() => client.cancel()} />}
     {state.screen === 'upload' && <Upload state={state} mode={mode} onStart={(files,text,purpose) => void client.start(files,text,student,purpose)} onManual={() => client.manual(student)} onDemo={fee => client.demo(fee,student)} onCancel={() => client.cancel()} />}
     {reportRunning && state.current && <ReportPending state={state} onCancel={() => client.cancel()} />}
     {state.screen === 'confirm' && state.current && !reportRunning && <Confirm key={state.current.case_id + ':' + state.current.revision} current={state.current} parsed={state.parsed} busy={state.busy} stage={state.stage} onConfirm={(facts, prefillFeeIds) => client.confirm(facts, prefillFeeIds)} onReset={() => void client.reset()} onCancel={() => client.cancel()} loadPage={client.previewDocument} />}
